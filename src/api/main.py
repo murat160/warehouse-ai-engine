@@ -25,6 +25,7 @@ from ..speech.text_to_speech import TextToSpeech
 from ..storage import init_db
 from ..storage.repositories import (
     ChannelRepository,
+    CustomVoiceRepository,
     GlossaryRepository,
     TranslationMemoryRepository,
 )
@@ -33,8 +34,14 @@ from ..translator.styles import list_emotions, list_styles, list_tones
 from ..translator.translation_memory import TranslationMemoryService
 from ..translator.translator_service import TranslatorService
 from ..translator.user_glossary import UserGlossaryService
-from ..voices import VOICE_CATALOG, get_voice
-from . import routes_catalog, routes_channels, routes_glossary, routes_memory
+from ..voices import VOICE_CATALOG, CustomVoiceService, get_voice
+from . import (
+    routes_catalog,
+    routes_channels,
+    routes_custom_voices,
+    routes_glossary,
+    routes_memory,
+)
 from .schemas import (
     HealthResponse,
     QualityReportSchema,
@@ -56,6 +63,8 @@ def build_app(
     glossary_repository: Optional[GlossaryRepository] = None,
     memory_repository: Optional[TranslationMemoryRepository] = None,
     channel_repository: Optional[ChannelRepository] = None,
+    custom_voice_repository: Optional[CustomVoiceRepository] = None,
+    custom_voice_service: Optional[CustomVoiceService] = None,
     settings: Optional[Settings] = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -188,6 +197,12 @@ def build_app(
         app.include_router(routes_memory.build_router(memory_repository))
     if channel_repository is not None:
         app.include_router(routes_channels.build_router(channel_repository))
+    if custom_voice_repository is not None and custom_voice_service is not None:
+        app.include_router(
+            routes_custom_voices.build_router(
+                custom_voice_repository, custom_voice_service, tts=tts,
+            )
+        )
     app.include_router(routes_catalog.router)
 
     return app
@@ -201,6 +216,8 @@ def create_app() -> FastAPI:
     glossary_repo = GlossaryRepository()
     memory_repo = TranslationMemoryRepository()
     channel_repo = ChannelRepository()
+    custom_voice_repo = CustomVoiceRepository()
+    custom_voice_service = CustomVoiceService(custom_voice_repo)
     user_glossary = UserGlossaryService(glossary_repo)
     translation_memory = TranslationMemoryService(memory_repo)
 
@@ -230,6 +247,8 @@ def create_app() -> FastAPI:
         glossary_repository=glossary_repo,
         memory_repository=memory_repo,
         channel_repository=channel_repo,
+        custom_voice_repository=custom_voice_repo,
+        custom_voice_service=custom_voice_service,
         settings=settings,
     )
 

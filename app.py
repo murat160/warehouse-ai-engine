@@ -33,6 +33,7 @@ from src.storage import init_db
 from src.storage.repositories import (
     ChannelDTO,
     ChannelRepository,
+    CustomVoiceRepository,
     DuplicateEntryError,
     GlossaryRepository,
     TranslationMemoryRepository,
@@ -49,7 +50,19 @@ from src.translator.styles import (
 from src.translator.translation_memory import TranslationMemoryService
 from src.translator.user_glossary import UserGlossaryService
 from src.ui.theme import inject as inject_theme
-from src.voices import VOICE_CATALOG, list_voices, voices_for_language
+from src.voices import (
+    VOICE_CATALOG,
+    CustomVoiceError,
+    CustomVoiceService,
+    list_clarity_options,
+    list_custom_voice_emotions,
+    list_custom_voice_use_cases,
+    list_intensity_options,
+    list_pitch_options,
+    list_speed_options,
+    list_voices,
+    voices_for_language,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -74,10 +87,13 @@ def _bootstrap_storage():
     glossary_repo = GlossaryRepository()
     tm_repo = TranslationMemoryRepository()
     channel_repo = ChannelRepository()
+    custom_voice_repo = CustomVoiceRepository()
     return {
         "glossary_repo": glossary_repo,
         "tm_repo": tm_repo,
         "channel_repo": channel_repo,
+        "custom_voice_repo": custom_voice_repo,
+        "custom_voice_service": CustomVoiceService(custom_voice_repo),
         "user_glossary": UserGlossaryService(glossary_repo),
         "translation_memory": TranslationMemoryService(tm_repo),
     }
@@ -1156,7 +1172,7 @@ with tab_channels:
 # ---------------------------------------------------------------------------
 
 
-def _render_voices_tab() -> None:
+def _render_voices_catalog() -> None:
     st.markdown("### Built-in voice catalog (23 profiles)")
     st.caption(
         "Готовые голосовые профили: пол, возраст, тон, темп, питч, поддерживаемые "
@@ -1219,6 +1235,370 @@ def _render_voices_tab() -> None:
                 st.code(voice.id)
                 if voice.notes:
                     st.caption(f"📝 {voice.notes}")
+
+
+def _render_custom_voices() -> None:
+    storage = _bootstrap_storage()
+    repo: CustomVoiceRepository = storage["custom_voice_repo"]
+    service: CustomVoiceService = storage["custom_voice_service"]
+    channel_repo: ChannelRepository = storage["channel_repo"]
+
+    st.markdown("### Мой голос / Custom Voices")
+    st.caption(
+        "Загрузи или запиши свой голос, настрой параметры и привяжи к каналу, "
+        "стилю или типу видео. Аудиофайлы хранятся локально (`data/custom_voices/`) "
+        "и **никогда не попадают в git**."
+    )
+
+    speeds = list_speed_options()
+    pitches = list_pitch_options()
+    emotions = list_custom_voice_emotions()
+    clarities = list_clarity_options()
+    intensities = list_intensity_options()
+    cv_use_cases = list_custom_voice_use_cases()
+
+    def _fmt(opts):
+        return lambda c: next((o.label_ru for o in opts if o.code == c), c)
+
+    # ---------------- Create form ----------------
+    with st.expander("➕ Create a custom voice", expanded=False):
+        with st.form("create_custom_voice", clear_on_submit=False):
+            name = st.text_input(
+                "Name", placeholder="Например: Мой голос — обычный",
+                key="cv_create_name",
+            )
+            description = st.text_area("Description", height=60, key="cv_create_desc")
+            row = st.columns(3)
+            with row[0]:
+                language = st.selectbox(
+                    "Language", LANGS, index=LANGS.index("ru"),
+                    format_func=_format_lang, key="cv_create_lang",
+                )
+            with row[1]:
+                speed = st.selectbox(
+                    "Speed (скорость)", [s.code for s in speeds], index=1,
+                    format_func=_fmt(speeds), key="cv_create_speed",
+                )
+            with row[2]:
+                pitch = st.selectbox(
+                    "Pitch (высота)", [p.code for p in pitches], index=1,
+                    format_func=_fmt(pitches), key="cv_create_pitch",
+                )
+            row2 = st.columns(3)
+            with row2[0]:
+                emotion = st.selectbox(
+                    "Emotion (эмоция)", [e.code for e in emotions], index=0,
+                    format_func=_fmt(emotions), key="cv_create_emotion",
+                )
+            with row2[1]:
+                clarity = st.selectbox(
+                    "Clarity (чистота)", [c.code for c in clarities], index=0,
+                    format_func=_fmt(clarities), key="cv_create_clarity",
+                )
+            with row2[2]:
+                intensity = st.selectbox(
+                    "Intensity (сила)", [i.code for i in intensities], index=1,
+                    format_func=_fmt(intensities), key="cv_create_intensity",
+                )
+            row3 = st.columns(3)
+            with row3[0]:
+                use_case = st.selectbox(
+                    "Use case", [u.code for u in cv_use_cases], index=0,
+                    format_func=_fmt(cv_use_cases), key="cv_create_use_case",
+                )
+            with row3[1]:
+                channels = channel_repo.list(limit=200)
+                channel_options = [None, *[c.id for c in channels]]
+                channel_id = st.selectbox(
+                    "Bind to channel",
+                    channel_options,
+                    index=0,
+                    format_func=lambda v: "— none —" if v is None else next(
+                        (c.name for c in channels if c.id == v), v
+                    ),
+                    key="cv_create_channel",
+                )
+            with row3[2]:
+                style_codes = [None, *[s.code for s in list_styles()]]
+                bound_style = st.selectbox(
+                    "Bind to style",
+                    style_codes,
+                    index=0,
+                    format_func=lambda v: "— none —" if v is None else v,
+                    key="cv_create_bstyle",
+                )
+
+            row4 = st.columns(2)
+            with row4[0]:
+                bound_video_use_case = st.selectbox(
+                    "Bind to video use case",
+                    [None, *[u.code for u in cv_use_cases]],
+                    index=0,
+                    format_func=lambda v: "— none —" if v is None else _fmt(cv_use_cases)(v),
+                    key="cv_create_bvuc",
+                )
+            with row4[1]:
+                parents = repo.list(parent_id="__none__", limit=200) if False else repo.list(limit=200)
+                parents = [p for p in parents if p.parent_id is None]
+                parent_options = [None, *[p.id for p in parents]]
+                parent_id = st.selectbox(
+                    "Variant of (parent voice)",
+                    parent_options,
+                    index=0,
+                    format_func=lambda v: "— standalone —" if v is None else next(
+                        (p.name for p in parents if p.id == v), v
+                    ),
+                    key="cv_create_parent",
+                )
+
+            st.markdown("**Audio sample (optional)** — upload a recording or skip.")
+            sample_upload = st.file_uploader(
+                "Upload sample",
+                type=["wav", "mp3", "m4a", "ogg", "flac", "webm"],
+                key="cv_create_upload",
+            )
+            recorded = None
+            if hasattr(st, "audio_input"):
+                recorded = st.audio_input(
+                    "…or record now (microphone)", key="cv_create_record"
+                )
+
+            st.markdown("---")
+            consent = st.checkbox(
+                "✅ Я подтверждаю, что имею право использовать этот голос. "
+                "/ I confirm I have the right to use this voice.",
+                value=False,
+                key="cv_create_consent",
+                help=(
+                    "Без подтверждения нельзя создать голосовой профиль. "
+                    "Не используйте чужой голос без разрешения."
+                ),
+            )
+
+            submitted = st.form_submit_button(
+                "Create voice", type="primary", disabled=False
+            )
+
+        if submitted:
+            if not consent:
+                st.error(
+                    "Поставь галочку согласия — создание Custom Voice без неё запрещено."
+                )
+            elif not name.strip():
+                st.warning("Имя обязательно.")
+            else:
+                sample_bytes = None
+                sample_filename = None
+                if recorded is not None:
+                    sample_bytes = recorded.getvalue() if hasattr(recorded, "getvalue") else recorded.read()
+                    sample_filename = "recording.wav"
+                elif sample_upload is not None:
+                    sample_bytes = sample_upload.read()
+                    sample_filename = sample_upload.name
+                try:
+                    service.create(
+                        name=name,
+                        consent_given=True,
+                        description=description.strip() or None,
+                        language=language,
+                        speed=speed,
+                        pitch=pitch,
+                        emotion=emotion,
+                        clarity=clarity,
+                        intensity=intensity,
+                        use_case=use_case,
+                        channel_id=channel_id,
+                        bound_style=bound_style,
+                        bound_video_use_case=bound_video_use_case,
+                        parent_id=parent_id,
+                        sample_bytes=sample_bytes,
+                        sample_filename=sample_filename,
+                    )
+                    st.success(f"Voice «{name}» created.")
+                    st.rerun()
+                except CustomVoiceError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("custom voice create failed")
+                    st.error(f"Failed: {exc}")
+
+    # ---------------- Filters + list ----------------
+    flt = st.columns([3, 1, 1])
+    with flt[0]:
+        q = st.text_input(
+            "Search", value="", placeholder="🔍 Find by name", key="cv_q",
+        )
+    with flt[1]:
+        f_lang = st.selectbox(
+            "Language", ["any", *LANGS], index=0,
+            format_func=lambda c: "Any" if c == "any" else _format_lang(c),
+            key="cv_filter_lang",
+        )
+    with flt[2]:
+        f_scope = st.selectbox(
+            "Scope", ["all", "channel", "global"], index=0, key="cv_filter_scope",
+        )
+
+    list_kwargs = {"query": q.strip() or None, "limit": 500}
+    if f_lang != "any":
+        list_kwargs["language"] = f_lang
+    if f_scope == "channel":
+        active = _selected_channel()
+        list_kwargs["channel_id"] = active.id if active else "__none__"
+    elif f_scope == "global":
+        list_kwargs["channel_id"] = None
+    voices = repo.list(**list_kwargs)
+
+    if not voices:
+        st.markdown(
+            "<div class='w-empty'>Custom voices will appear here once you create one.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.caption(f"{len(voices)} voice(s)")
+    for voice in voices:
+        with st.container(border=True):
+            top = st.columns([3, 3, 2])
+            with top[0]:
+                title = f"### 🎤 {voice.name}"
+                if voice.parent_id:
+                    title += f" <span class='w-pill muted'>variant</span>"
+                st.markdown(title, unsafe_allow_html=True)
+                if voice.description:
+                    st.caption(voice.description)
+                pills = [
+                    f"<span class='w-pill muted'>{_format_lang(voice.language)}</span>",
+                    f"<span class='w-pill muted'>speed: {voice.speed}</span>",
+                    f"<span class='w-pill muted'>pitch: {voice.pitch}</span>",
+                    f"<span class='w-pill muted'>emotion: {voice.emotion}</span>",
+                    f"<span class='w-pill muted'>clarity: {voice.clarity}</span>",
+                    f"<span class='w-pill muted'>intensity: {voice.intensity}</span>",
+                    f"<span class='w-pill muted'>use case: {voice.use_case}</span>",
+                ]
+                st.markdown("".join(pills), unsafe_allow_html=True)
+                bindings = []
+                if voice.channel_id:
+                    chan = channel_repo.get(voice.channel_id)
+                    bindings.append(f"📺 {chan.name if chan else voice.channel_id}")
+                if voice.bound_style:
+                    bindings.append(f"🎨 style: {voice.bound_style}")
+                if voice.bound_video_use_case:
+                    bindings.append(f"🎬 {voice.bound_video_use_case}")
+                if bindings:
+                    st.caption("Bound to: " + " · ".join(bindings))
+                if voice.sample_path:
+                    sample = Path(voice.sample_path)
+                    if sample.exists():
+                        st.audio(str(sample))
+                    else:
+                        st.caption("📁 sample file missing on disk")
+                else:
+                    st.caption("📁 no audio sample uploaded")
+                if voice.consent_given:
+                    st.caption(f"✅ consent confirmed at {voice.consent_at or '—'}")
+            with top[1]:
+                with st.popover("🔊 Прослушать пример", use_container_width=True):
+                    sample_text_default = {
+                        "ru": "Привет! Это тестовая озвучка моего голоса.",
+                        "tk": "Salam! Bu meniň sesimiň synag ýazgysy.",
+                        "tr": "Merhaba! Bu sesimin örnek seslendirilmesidir.",
+                        "en": "Hello! This is a quick preview of my voice.",
+                    }.get(voice.language, "Hello!")
+                    text = st.text_area(
+                        "Sample text",
+                        value=sample_text_default,
+                        height=80,
+                        key=f"cv_pv_{voice.id}",
+                    )
+                    if st.button("Generate preview", type="primary", key=f"cv_pv_btn_{voice.id}"):
+                        try:
+                            if voice.language == "tk":
+                                tts = get_tts()
+                                wav = tts.synthesize(text, emotion=voice.emotion or "neutral")
+                                st.audio(wav)
+                                st.caption(
+                                    "Preview rendered with offline MMS-TTS — true voice "
+                                    "cloning requires an XTTS / ElevenLabs provider (not configured)."
+                                )
+                            else:
+                                st.warning(
+                                    "Preview for ru/tr/en in this Streamlit MVP requires a "
+                                    "configured cloud TTS provider (set OPENAI_API_KEY) and "
+                                    "is currently disabled — see the FastAPI route "
+                                    "`/v1/custom-voices/{id}/preview` to render previews."
+                                )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.exception("preview failed")
+                            st.error(f"Preview failed: {exc}")
+            with top[2]:
+                if st.button("➕ Variant", key=f"cv_var_{voice.id}", use_container_width=True):
+                    st.session_state["cv_create_parent"] = voice.id
+                    st.toast("Set as parent — open the create form to add a variant.")
+                with st.popover("Edit", use_container_width=True):
+                    e_name = st.text_input("Name", value=voice.name, key=f"cv_e_n_{voice.id}")
+                    e_desc = st.text_area("Description", value=voice.description or "", key=f"cv_e_d_{voice.id}")
+                    e_speed = st.selectbox(
+                        "Speed", [s.code for s in speeds],
+                        index=[s.code for s in speeds].index(voice.speed)
+                        if voice.speed in [s.code for s in speeds] else 1,
+                        format_func=_fmt(speeds), key=f"cv_e_sp_{voice.id}",
+                    )
+                    e_pitch = st.selectbox(
+                        "Pitch", [p.code for p in pitches],
+                        index=[p.code for p in pitches].index(voice.pitch)
+                        if voice.pitch in [p.code for p in pitches] else 1,
+                        format_func=_fmt(pitches), key=f"cv_e_pi_{voice.id}",
+                    )
+                    e_emotion = st.selectbox(
+                        "Emotion", [e.code for e in emotions],
+                        index=[e.code for e in emotions].index(voice.emotion)
+                        if voice.emotion in [e.code for e in emotions] else 0,
+                        format_func=_fmt(emotions), key=f"cv_e_em_{voice.id}",
+                    )
+                    e_clarity = st.selectbox(
+                        "Clarity", [c.code for c in clarities],
+                        index=[c.code for c in clarities].index(voice.clarity)
+                        if voice.clarity in [c.code for c in clarities] else 0,
+                        format_func=_fmt(clarities), key=f"cv_e_cl_{voice.id}",
+                    )
+                    e_intensity = st.selectbox(
+                        "Intensity", [i.code for i in intensities],
+                        index=[i.code for i in intensities].index(voice.intensity)
+                        if voice.intensity in [i.code for i in intensities] else 1,
+                        format_func=_fmt(intensities), key=f"cv_e_in_{voice.id}",
+                    )
+                    e_uc = st.selectbox(
+                        "Use case", [u.code for u in cv_use_cases],
+                        index=[u.code for u in cv_use_cases].index(voice.use_case)
+                        if voice.use_case in [u.code for u in cv_use_cases] else 0,
+                        format_func=_fmt(cv_use_cases), key=f"cv_e_uc_{voice.id}",
+                    )
+                    if st.button("Save", type="primary", key=f"cv_e_save_{voice.id}"):
+                        repo.update(
+                            voice.id,
+                            name=e_name,
+                            description=e_desc or None,
+                            speed=e_speed,
+                            pitch=e_pitch,
+                            emotion=e_emotion,
+                            clarity=e_clarity,
+                            intensity=e_intensity,
+                            use_case=e_uc,
+                        )
+                        st.success("Updated.")
+                        st.rerun()
+                if st.button("🗑️ Delete", key=f"cv_del_{voice.id}", use_container_width=True):
+                    service.delete(voice.id)
+                    st.rerun()
+
+
+def _render_voices_tab() -> None:
+    sub_catalog, sub_custom = st.tabs(["📚 Catalog (23)", "🎤 My Voices"])
+    with sub_catalog:
+        _render_voices_catalog()
+    with sub_custom:
+        _render_custom_voices()
 
 
 with tab_voices:

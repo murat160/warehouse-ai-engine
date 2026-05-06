@@ -149,6 +149,92 @@ class GlossaryEntry(Base):
 # ---------------------------------------------------------------------------
 
 
+class CustomVoiceProfile(Base):
+    """User-defined voice profile (Custom Voice).
+
+    Stores profile metadata + a path to the locally-stored audio sample.
+    Audio files are NEVER committed to git — they live under ``data/custom_voices/``,
+    which is in ``.gitignore``. The ``consent_given`` flag must be ``True``
+    before a profile can be created.
+    """
+
+    __tablename__ = "custom_voices"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+
+    # ----- voice settings -----
+    language: Mapped[str] = mapped_column(String(8), default="ru")
+    speed: Mapped[str] = mapped_column(String(20), default="normal")
+    pitch: Mapped[str] = mapped_column(String(20), default="normal")
+    emotion: Mapped[str] = mapped_column(String(40), default="neutral")
+    clarity: Mapped[str] = mapped_column(String(20), default="normal")
+    intensity: Mapped[str] = mapped_column(String(20), default="medium")
+    use_case: Mapped[str] = mapped_column(String(20), default="text")
+
+    # ----- variant chain (e.g. "Мой голос — блогерский") -----
+    parent_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("custom_voices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+
+    # ----- bindings (all optional) -----
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+    bound_style: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, default=None)
+    bound_video_use_case: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True, default=None,
+    )
+
+    # ----- audio sample (local only) -----
+    sample_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    sample_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+
+    # ----- consent (REQUIRED) -----
+    consent_given: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    consent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, default=None,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "language": self.language,
+            "speed": self.speed,
+            "pitch": self.pitch,
+            "emotion": self.emotion,
+            "clarity": self.clarity,
+            "intensity": self.intensity,
+            "use_case": self.use_case,
+            "parent_id": self.parent_id,
+            "channel_id": self.channel_id,
+            "bound_style": self.bound_style,
+            "bound_video_use_case": self.bound_video_use_case,
+            "sample_path": self.sample_path,
+            "sample_duration": self.sample_duration,
+            "consent_given": bool(self.consent_given),
+            "consent_text": self.consent_text,
+            "consent_at": self.consent_at.isoformat() if self.consent_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class TranslationMemoryEntry(Base):
     """Whole-segment translation memory (input → curated translation)."""
 

@@ -43,3 +43,13 @@ hf_cache/
 # Local storage (user glossary + TM SQLite db)
 data/
 out/
+
+# Custom Voice samples — NEVER commit user audio to this repository.
+# Profiles live in SQLite, the audio files live on disk only.
+data/custom_voices/
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.webm

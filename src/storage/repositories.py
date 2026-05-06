@@ -14,9 +14,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from .db import session_scope
 from .models import (
     Channel,
+    CustomVoiceProfile,
     GlossaryEntry,
     TranslationMemoryEntry,
     hash_for_match,
@@ -554,9 +557,244 @@ class TranslationMemoryRepository:
             return True
 
 
+# ---------------------------------------------------------------------------
+# Custom voices (Custom Voice / Мой голос)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CustomVoiceDTO:
+    id: str
+    name: str
+    description: Optional[str]
+    language: str
+    speed: str
+    pitch: str
+    emotion: str
+    clarity: str
+    intensity: str
+    use_case: str
+    parent_id: Optional[str]
+    channel_id: Optional[str]
+    bound_style: Optional[str]
+    bound_video_use_case: Optional[str]
+    sample_path: Optional[str]
+    sample_duration: Optional[float]
+    consent_given: bool
+    consent_text: Optional[str]
+    consent_at: Optional[str]
+
+    @classmethod
+    def from_orm(cls, e: CustomVoiceProfile) -> "CustomVoiceDTO":
+        return cls(
+            id=e.id,
+            name=e.name,
+            description=e.description,
+            language=e.language,
+            speed=e.speed,
+            pitch=e.pitch,
+            emotion=e.emotion,
+            clarity=e.clarity,
+            intensity=e.intensity,
+            use_case=e.use_case,
+            parent_id=e.parent_id,
+            channel_id=e.channel_id,
+            bound_style=e.bound_style,
+            bound_video_use_case=e.bound_video_use_case,
+            sample_path=e.sample_path,
+            sample_duration=e.sample_duration,
+            consent_given=bool(e.consent_given),
+            consent_text=e.consent_text,
+            consent_at=e.consent_at.isoformat() if e.consent_at else None,
+        )
+
+
+class ConsentRequiredError(ValueError):
+    """Raised when a Custom Voice is created/saved without explicit consent."""
+
+
+class CustomVoiceRepository:
+    """CRUD for Custom Voices.
+
+    Audio sample files live on disk under ``data/custom_voices/`` — only the
+    *path* is stored here. Creating a profile without ``consent_given=True``
+    is rejected at the repository level so the constraint cannot be bypassed
+    by a buggy caller.
+    """
+
+    def __init__(self, session_provider=session_scope) -> None:
+        self._session_provider = session_provider
+
+    def list(
+        self,
+        *,
+        language: Optional[str] = None,
+        channel_id=_UNSET,
+        parent_id=_UNSET,
+        query: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[CustomVoiceDTO]:
+        with self._session_provider() as session:
+            stmt = select(CustomVoiceProfile)
+            if language:
+                stmt = stmt.where(CustomVoiceProfile.language == language)
+            if channel_id is not _UNSET:
+                if channel_id is None:
+                    stmt = stmt.where(CustomVoiceProfile.channel_id.is_(None))
+                else:
+                    stmt = stmt.where(CustomVoiceProfile.channel_id == channel_id)
+            if parent_id is not _UNSET:
+                if parent_id is None:
+                    stmt = stmt.where(CustomVoiceProfile.parent_id.is_(None))
+                else:
+                    stmt = stmt.where(CustomVoiceProfile.parent_id == parent_id)
+            if query:
+                like = f"%{query.lower()}%"
+                stmt = stmt.where(CustomVoiceProfile.name.ilike(like))
+            stmt = stmt.order_by(CustomVoiceProfile.updated_at.desc()).limit(limit)
+            return [CustomVoiceDTO.from_orm(e) for e in session.execute(stmt).scalars()]
+
+    def get(self, voice_id: str) -> Optional[CustomVoiceDTO]:
+        with self._session_provider() as session:
+            entity = session.get(CustomVoiceProfile, voice_id)
+            return CustomVoiceDTO.from_orm(entity) if entity else None
+
+    def variants_of(self, parent_id: str) -> List[CustomVoiceDTO]:
+        return self.list(parent_id=parent_id)
+
+    def create(
+        self,
+        *,
+        name: str,
+        language: str = "ru",
+        speed: str = "normal",
+        pitch: str = "normal",
+        emotion: str = "neutral",
+        clarity: str = "normal",
+        intensity: str = "medium",
+        use_case: str = "text",
+        description: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        bound_style: Optional[str] = None,
+        bound_video_use_case: Optional[str] = None,
+        sample_path: Optional[str] = None,
+        sample_duration: Optional[float] = None,
+        consent_given: bool = False,
+        consent_text: Optional[str] = None,
+    ) -> CustomVoiceDTO:
+        if not name.strip():
+            raise ValueError("name is required")
+        if not consent_given:
+            raise ConsentRequiredError(
+                "creating a Custom Voice requires explicit consent "
+                "(consent_given=True). The user must confirm they have the "
+                "right to use this voice."
+            )
+        with self._session_provider() as session:
+            entity = CustomVoiceProfile(
+                name=name.strip(),
+                description=description,
+                language=language,
+                speed=speed,
+                pitch=pitch,
+                emotion=emotion,
+                clarity=clarity,
+                intensity=intensity,
+                use_case=use_case,
+                parent_id=parent_id,
+                channel_id=channel_id,
+                bound_style=bound_style,
+                bound_video_use_case=bound_video_use_case,
+                sample_path=sample_path,
+                sample_duration=sample_duration,
+                consent_given=True,
+                consent_text=consent_text or DEFAULT_CONSENT_TEXT,
+                consent_at=datetime.now(timezone.utc),
+            )
+            session.add(entity)
+            session.flush()
+            return CustomVoiceDTO.from_orm(entity)
+
+    def update(
+        self,
+        voice_id: str,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        language: Optional[str] = None,
+        speed: Optional[str] = None,
+        pitch: Optional[str] = None,
+        emotion: Optional[str] = None,
+        clarity: Optional[str] = None,
+        intensity: Optional[str] = None,
+        use_case: Optional[str] = None,
+        parent_id=_UNSET,
+        channel_id=_UNSET,
+        bound_style=_UNSET,
+        bound_video_use_case=_UNSET,
+        sample_path: Optional[str] = None,
+        sample_duration: Optional[float] = None,
+    ) -> Optional[CustomVoiceDTO]:
+        with self._session_provider() as session:
+            entity = session.get(CustomVoiceProfile, voice_id)
+            if entity is None:
+                return None
+            if name is not None:
+                entity.name = name.strip()
+            if description is not None:
+                entity.description = description
+            if language is not None:
+                entity.language = language
+            if speed is not None:
+                entity.speed = speed
+            if pitch is not None:
+                entity.pitch = pitch
+            if emotion is not None:
+                entity.emotion = emotion
+            if clarity is not None:
+                entity.clarity = clarity
+            if intensity is not None:
+                entity.intensity = intensity
+            if use_case is not None:
+                entity.use_case = use_case
+            if parent_id is not _UNSET:
+                entity.parent_id = parent_id
+            if channel_id is not _UNSET:
+                entity.channel_id = channel_id
+            if bound_style is not _UNSET:
+                entity.bound_style = bound_style
+            if bound_video_use_case is not _UNSET:
+                entity.bound_video_use_case = bound_video_use_case
+            if sample_path is not None:
+                entity.sample_path = sample_path
+            if sample_duration is not None:
+                entity.sample_duration = sample_duration
+            session.flush()
+            return CustomVoiceDTO.from_orm(entity)
+
+    def delete(self, voice_id: str) -> bool:
+        with self._session_provider() as session:
+            entity = session.get(CustomVoiceProfile, voice_id)
+            if entity is None:
+                return False
+            session.delete(entity)
+            return True
+
+
+DEFAULT_CONSENT_TEXT = (
+    "Я подтверждаю, что имею право использовать этот голос. / "
+    "I confirm that I have the right to use this voice."
+)
+
+
 __all__ = [
     "ChannelDTO",
     "ChannelRepository",
+    "ConsentRequiredError",
+    "CustomVoiceDTO",
+    "CustomVoiceRepository",
+    "DEFAULT_CONSENT_TEXT",
     "DuplicateEntryError",
     "GlossaryEntryDTO",
     "GlossaryRepository",

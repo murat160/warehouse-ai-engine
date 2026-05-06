@@ -243,3 +243,74 @@ class TMUpdateRequest(BaseModel):
     score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     note: Optional[str] = Field(default=None, max_length=2_000)
     channel_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Custom voices
+# ---------------------------------------------------------------------------
+
+
+class CustomVoiceSchema(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    language: str = "ru"
+    speed: str = "normal"
+    pitch: str = "normal"
+    emotion: str = "neutral"
+    clarity: str = "normal"
+    intensity: str = "medium"
+    use_case: str = "text"
+    parent_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    bound_style: Optional[str] = None
+    bound_video_use_case: Optional[str] = None
+    sample_path: Optional[str] = None
+    sample_duration: Optional[float] = None
+    consent_given: bool = False
+    consent_text: Optional[str] = None
+    consent_at: Optional[str] = None
+
+
+class CustomVoiceCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=2_000)
+    language: str = "ru"
+    speed: str = "normal"
+    pitch: str = "normal"
+    emotion: str = "neutral"
+    clarity: str = "normal"
+    intensity: str = "medium"
+    use_case: str = "text"
+    parent_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    bound_style: Optional[str] = None
+    bound_video_use_case: Optional[str] = None
+    consent_given: bool = Field(
+        default=False,
+        description=(
+            "Must be true. The caller confirms the voice may be used. "
+            "Without this flag the request is rejected."
+        ),
+    )
+
+
+class CustomVoiceUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    language: Optional[str] = None
+    speed: Optional[str] = None
+    pitch: Optional[str] = None
+    emotion: Optional[str] = None
+    clarity: Optional[str] = None
+    intensity: Optional[str] = None
+    use_case: Optional[str] = None
+    parent_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    bound_style: Optional[str] = None
+    bound_video_use_case: Optional[str] = None
+
+
+class CustomVoicePreviewRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=600)
+    emotion: Optional[str] = None  # overrides profile emotion if set

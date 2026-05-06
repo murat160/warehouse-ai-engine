@@ -93,6 +93,13 @@ GET /v1/voices?use_case=video
 GET /v1/voices/{voice_id}
 ```
 
+## User-defined voices (Custom Voice)
+
+The catalog above is **read-only**. For user-defined voices ("Мой голос"),
+see [`docs/custom-voices.md`](custom-voices.md): per-user profiles with
+speed/pitch/emotion/clarity/intensity, optional audio sample, mandatory
+consent, variants and bindings to channels/styles/video use cases.
+
 ## Adding more voices
 
 Custom voices live in `VOICE_CATALOG` (`src/voices/catalog.py`). To add a
