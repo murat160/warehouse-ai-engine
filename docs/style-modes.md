@@ -1,7 +1,7 @@
-# Style modes
+# Style modes — Murat AI
 
-`warehouse-ai-engine` exposes three independent axes a caller can combine
-to control the **how** of a translation. They sit on top of the language
+**Murat AI** (source repo: `warehouse-ai-engine`) exposes three independent
+axes a caller can combine to control the **how** of a translation. They sit on top of the language
 pair (the **what**) and the optional channel (the **for whom**).
 
 ```

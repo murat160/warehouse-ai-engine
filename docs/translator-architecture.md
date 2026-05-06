@@ -1,9 +1,12 @@
-# Translator architecture
+# Translator architecture — Murat AI
 
-This document describes the AI translation / speech / video subsystem that
-lives in `warehouse-ai-engine`. It is intentionally a **separate** repository
-from `warehouse-ecosystem` and is not coupled to the customer, courier,
-seller or admin applications.
+This document describes the AI translation / speech / video subsystem
+behind **Murat AI**. The source code lives in the `warehouse-ai-engine`
+repository — that name is purely the technical GitHub identifier; the
+shipping product is **Murat AI**.
+
+The repository is intentionally **separate** from `warehouse-ecosystem`
+and is not coupled to the customer, courier, seller or admin applications.
 
 ## Goals
 

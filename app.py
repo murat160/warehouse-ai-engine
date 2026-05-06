@@ -1,4 +1,4 @@
-"""Streamlit cloud app — Warehouse AI Translator.
+"""Streamlit app — Murat AI.
 
 Sections:
   * Sidebar — channel switcher (AI agents) + global settings
@@ -172,12 +172,13 @@ def _selected_channel() -> Optional[ChannelDTO]:
 
 
 st.set_page_config(
-    page_title="Warehouse AI Translator",
+    page_title="Murat AI",
     page_icon="🌐",
     layout="wide",
     menu_items={
-        "About": "Warehouse AI Engine — multilingual translator with channels, "
-        "user glossary, translation memory and Turkmen voice."
+        "About": "Murat AI — translation, voiceover and dubbing for "
+        "Russian, Turkmen, Turkish and English. Channels (AI agents), user "
+        "glossary, translation memory and Custom Voices included."
     },
 )
 inject_theme(st)

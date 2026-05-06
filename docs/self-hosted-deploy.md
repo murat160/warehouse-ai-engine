@@ -1,10 +1,17 @@
-# Self-hosted deployment on your own VPS
+# Self-hosted deployment on your own VPS — Murat AI
 
-This is the **primary** deployment path for `warehouse-ai-engine`: your VPS,
-your domain, your data. Everything is delivered as Docker containers, with
-host-side nginx as the TLS reverse proxy. End result:
+This is the **primary** deployment path for **Murat AI** (the source code
+ships in the `warehouse-ai-engine` repository). Your VPS, your domain,
+your data. Everything is delivered as Docker containers, with host-side
+nginx as the TLS reverse proxy.
 
-> `https://ai.your-domain.com` → nginx → Streamlit container → Postgres container.
+End result:
+
+> `https://ai.murat-ai.com` → nginx → Streamlit container → Postgres container.
+
+The placeholder domain throughout this guide is `ai.murat-ai.com`. Replace
+it with whatever subdomain you actually point at this VPS — for example
+`translator.murat-ai.com` or `ai.your-domain.com`.
 
 ## What you get
 
@@ -122,7 +129,7 @@ sudo ln -s /etc/nginx/sites-available/translator.conf \
            /etc/nginx/sites-enabled/translator.conf
 
 # Replace the placeholder domain.
-sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
+sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
         /etc/nginx/sites-available/translator.conf
 ```
 
@@ -135,7 +142,7 @@ Before Certbot has issued a certificate, comment out the `listen 443` block
 sudo tee /etc/nginx/sites-available/translator.conf > /dev/null <<'NGX'
 server {
     listen 80;
-    server_name ai.your-domain.com;
+    server_name ai.murat-ai.com;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { proxy_pass http://127.0.0.1:8501; }
 }
@@ -153,13 +160,13 @@ Type  Host  Value           TTL
 A     ai    <VPS public IP> 300
 ```
 
-Wait until `dig +short ai.your-domain.com` returns the right IP. With a 300
+Wait until `dig +short ai.murat-ai.com` returns the right IP. With a 300
 TTL this is usually under 5 minutes.
 
 ## 7. Issue the SSL certificate
 
 ```bash
-sudo certbot --nginx -d ai.your-domain.com \
+sudo certbot --nginx -d ai.murat-ai.com \
              --redirect --agree-tos --email you@your-domain.com -n
 ```
 
@@ -171,20 +178,20 @@ repo (it has WebSocket + long timeouts + large uploads tuned for Streamlit):
 
 ```bash
 sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
+sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
         /etc/nginx/sites-available/translator.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ## 8. Verify it works
 
-* `https://ai.your-domain.com` opens the Streamlit UI in the browser.
+* `https://ai.murat-ai.com` opens the Streamlit UI in the browser.
 * Switch the UI language in the sidebar (🇷🇺 / 🇹🇲 / 🇹🇷 / 🇬🇧) — the page
   re-renders on the chosen language.
 * Translate a short Russian phrase to Turkmen — first call takes ~30 s
   (model download), subsequent calls are fast.
 * Upload a short video to the **🎬 Аудио / Видео / URL** tab and run it.
-* Health endpoint: `curl https://ai.your-domain.com/_stcore/health` → `ok`.
+* Health endpoint: `curl https://ai.murat-ai.com/_stcore/health` → `ok`.
 
 ## 9. Operations
 

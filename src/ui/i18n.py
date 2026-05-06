@@ -52,16 +52,20 @@ def set_ui_lang(lang: str) -> None:
 STRINGS: Dict[str, Mapping[str, str]] = {
     # ----- chrome -----
     "app_title": {
-        "ru": "Warehouse AI Translator",
-        "tk": "Warehouse AI Terjimeçi",
-        "tr": "Warehouse AI Çevirmen",
-        "en": "Warehouse AI Translator",
+        "ru": "Murat AI",
+        "tk": "Murat AI",
+        "tr": "Murat AI",
+        "en": "Murat AI",
     },
     "app_subtitle": {
-        "ru": "RU · TK · TR · EN — перевод, голос, видео. Приоритет: ru ↔ tk.",
-        "tk": "RU · TK · TR · EN — terjime, ses, wideo. Esasy ugur: ru ↔ tk.",
-        "tr": "RU · TK · TR · EN — çeviri, ses, video. Öncelik: ru ↔ tk.",
-        "en": "RU · TK · TR · EN — translation, voice, video. Priority: ru ↔ tk.",
+        "ru": "Murat AI — перевод, озвучка и дубляж на русском, туркменском, "
+              "турецком и английском языках.",
+        "tk": "Murat AI — rus, türkmen, türk we iňlis dillerinde terjime, sesli "
+              "okamak we dubläž.",
+        "tr": "Murat AI — Rusça, Türkmence, Türkçe ve İngilizce dillerinde çeviri, "
+              "seslendirme ve dublaj.",
+        "en": "Murat AI — translation, voiceover and dubbing in Russian, Turkmen, "
+              "Turkish and English.",
     },
 
     # ----- sidebar -----

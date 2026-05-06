@@ -1,4 +1,4 @@
-# Self-hosted production stack for warehouse-ai-engine.
+# Self-hosted production stack for Murat AI (repo: warehouse-ai-engine).
 #
 # Usage on a fresh Ubuntu VPS:
 #   1) cp .env.production.example .env.production  &&  edit it
@@ -13,8 +13,8 @@
 services:
   app:
     build: .
-    image: warehouse-ai-engine:latest
-    container_name: warehouse-ai-app
+    image: murat-ai:latest
+    container_name: murat-ai-app
     restart: unless-stopped
     env_file:
       - .env.production
@@ -39,7 +39,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: warehouse-ai-db
+    container_name: murat-ai-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

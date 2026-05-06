@@ -1,16 +1,24 @@
-# Deploy guide
+# Deploy guide — Murat AI
 
-`warehouse-ai-engine` is built around **self-hosted deployment** on your own
-VPS / server with your own domain. That's the supported, primary path. The
-managed alternatives (Hugging Face Spaces, Streamlit Cloud) are documented
-at the bottom for quick demos only — they reset their containers and are
-not suitable for production.
+**Murat AI** (source repository: `warehouse-ai-engine`) is built around
+**self-hosted deployment** on your own VPS / server with your own domain.
+That's the supported, primary path. The managed alternatives (Hugging Face
+Spaces, Streamlit Cloud) are documented at the bottom for quick demos only
+— they reset their containers and are not suitable for production.
+
+Default placeholder domain in this guide is `ai.murat-ai.com` — replace it
+with whatever subdomain you point at the VPS:
+
+* `https://murat-ai.com`
+* `https://ai.murat-ai.com`
+* `https://translator.murat-ai.com`
+* …or `https://ai.your-domain.com` if you bring your own domain.
 
 ---
 
 ## Primary: self-hosted on your VPS
 
-End result: `https://ai.your-domain.com` → host nginx → Streamlit container
+End result: `https://ai.murat-ai.com` → host nginx → Streamlit container
 → Postgres container.
 
 * Pre-built Docker stack (`Dockerfile`, `docker-compose.yml`).
@@ -36,16 +44,16 @@ nano .env.production                       # set POSTGRES_PASSWORD, etc.
 docker compose up -d --build
 
 sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
+sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
          /etc/nginx/sites-available/translator.conf
 sudo ln -s /etc/nginx/sites-available/translator.conf /etc/nginx/sites-enabled/
 sudo systemctl reload nginx
 
-sudo certbot --nginx -d ai.your-domain.com --redirect \
+sudo certbot --nginx -d ai.murat-ai.com --redirect \
              --agree-tos -m you@your-domain.com -n
 ```
 
-Open `https://ai.your-domain.com` — you should see the Streamlit UI.
+Open `https://ai.murat-ai.com` — you should see the Streamlit UI.
 
 ---
 

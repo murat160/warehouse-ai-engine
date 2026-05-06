@@ -1,5 +1,5 @@
-# Production image for warehouse-ai-engine.
-# Build:  docker build -t warehouse-ai-engine .
+# Production image for Murat AI (source repo: warehouse-ai-engine).
+# Build:  docker build -t murat-ai .
 # Run:    handled by docker-compose.yml (see docs/self-hosted-deploy.md).
 
 FROM python:3.11-slim AS base
