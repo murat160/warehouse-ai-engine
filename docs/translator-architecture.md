@@ -27,9 +27,9 @@ src/
   translator/
     languages.py           # supported languages + pair validation
     glossary.py            # static curated ru<->tk literary glossary
-    user_glossary.py       # runtime user glossary (DB-backed)
-    translation_memory.py  # whole-segment overrides
-    styles.py              # 8 style/emotion profiles + prompt hints
+    user_glossary.py       # runtime user glossary (DB-backed, channel-aware)
+    translation_memory.py  # whole-segment overrides (channel-aware)
+    styles.py              # 15 styles + 16 tones + 7 emotions + prompt hints
     quality_check.py       # heuristic post-translation QA
     translator_service.py  # orchestrator: TM + provider + glossaries + QA
   speech/
@@ -39,10 +39,13 @@ src/
     video_processor.py     # ffmpeg wrappers (extract / replace audio)
     subtitles.py           # SRT / WebVTT formatting
     dubbing_pipeline.py    # STT -> translate -> TTS -> mux
+  voices/
+    models.py              # VoiceProfile dataclass + enums
+    catalog.py             # 23 built-in voices (cloud + Meta MMS Turkmen)
   storage/
-    db.py                  # SQLAlchemy engine + session factory
-    models.py              # ORM: GlossaryEntry, TranslationMemoryEntry
-    repositories.py        # CRUD + search for both tables
+    db.py                  # SQLAlchemy engine + session factory + migrations
+    models.py              # ORM: Channel, GlossaryEntry, TranslationMemoryEntry
+    repositories.py        # CRUD + search; channel-scoping respected
   cloud/                   # NLLB-200 / Whisper / MMS-TTS implementation
   ui/
     theme.py               # Streamlit CSS theme

@@ -58,6 +58,8 @@ class FallbackProvider(TranslationProvider, STTProvider, TTSProvider):
         target_lang: str,
         literary: bool = False,
         style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
     ) -> str:
         raise ProviderUnavailableError(
             "no fallback translator is configured; set OPENAI_API_KEY"

@@ -1,4 +1,4 @@
-"""Integration: TranslatorService + user glossary + translation memory."""
+"""Integration: TranslatorService + user glossary + translation memory + channels."""
 
 from __future__ import annotations
 
@@ -36,8 +36,6 @@ def test_user_glossary_overrides_provider_output(glossary_repo, tm_repo):
         source_text="доставка", target_text="eltip bermek",
     )
     service = _build_service(glossary_repo, tm_repo)
-    # The fake provider echoes the source. Our glossary entry replaces
-    # any "доставка" token in the output, regardless of where it sits.
     result = service.translate(
         text="доставка", source_lang="ru", target_lang="tk"
     )
@@ -45,23 +43,70 @@ def test_user_glossary_overrides_provider_output(glossary_repo, tm_repo):
     assert "eltip bermek" in result.user_glossary_hits
 
 
-def test_style_propagates_to_result(glossary_repo, tm_repo):
+def test_style_tone_emotion_propagate_to_result(glossary_repo, tm_repo):
     service = _build_service(glossary_repo, tm_repo)
     result = service.translate(
         text="Hello world",
         source_lang="en",
         target_lang="tk",
-        style="respectful",
+        style="blogger",
+        tone="energetic",
+        emotion="excited",
     )
-    assert result.style == "respectful"
+    assert result.style == "blogger"
+    assert result.tone == "energetic"
+    assert result.emotion == "excited"
 
 
-def test_unknown_style_falls_back_to_neutral(glossary_repo, tm_repo):
+def test_unknown_style_falls_back_to_natural(glossary_repo, tm_repo):
     service = _build_service(glossary_repo, tm_repo)
     result = service.translate(
-        text="Hello",
-        source_lang="en",
-        target_lang="ru",
-        style="hyperbolic",
+        text="Hello", source_lang="en", target_lang="ru", style="hyperbolic",
     )
-    assert result.style == "neutral"
+    assert result.style == "natural"
+
+
+def test_default_style_is_natural_not_literary(glossary_repo, tm_repo):
+    service = _build_service(glossary_repo, tm_repo)
+    # Default is now NATURAL even for the priority ru<->tk pair.
+    result = service.translate(text="Привет", source_lang="ru", target_lang="tk")
+    assert result.style == "natural"
+
+
+def test_channel_glossary_wins_over_global(glossary_repo, tm_repo):
+    glossary_repo.create(
+        source_lang="ru", target_lang="tk",
+        source_text="доставка", target_text="дост-global",
+    )
+    glossary_repo.create(
+        source_lang="ru", target_lang="tk",
+        source_text="доставка", target_text="дост-channel",
+        channel_id="chan-1",
+    )
+    service = _build_service(glossary_repo, tm_repo)
+    no_chan = service.translate(
+        text="доставка", source_lang="ru", target_lang="tk",
+    )
+    with_chan = service.translate(
+        text="доставка", source_lang="ru", target_lang="tk",
+        channel_id="chan-1",
+    )
+    assert "дост-global" in no_chan.text
+    assert "дост-channel" in with_chan.text
+
+
+def test_channel_tm_short_circuits_provider(glossary_repo, tm_repo):
+    tm_repo.upsert(
+        source_lang="ru", target_lang="tk",
+        source_text="спасибо", target_text="global-thanks",
+    )
+    tm_repo.upsert(
+        source_lang="ru", target_lang="tk",
+        source_text="спасибо", target_text="channel-thanks",
+        channel_id="chan-1",
+    )
+    service = _build_service(glossary_repo, tm_repo)
+    out = service.translate(
+        text="спасибо", source_lang="ru", target_lang="tk", channel_id="chan-1"
+    )
+    assert out.tm_hit and out.text == "channel-thanks"

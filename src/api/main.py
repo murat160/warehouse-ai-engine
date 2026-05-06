@@ -1,10 +1,4 @@
-"""FastAPI app exposing translate / stt / tts / glossary / TM endpoints.
-
-The factory functions :func:`build_app` and :func:`create_app` keep the
-default and the dependency-injected variants apart — production code uses
-:func:`create_app` (reads settings, wires real providers); tests use
-:func:`build_app` to inject fakes without env vars.
-"""
+"""FastAPI app: translate / stt / tts / glossary / TM / channels / catalog."""
 
 from __future__ import annotations
 
@@ -30,21 +24,22 @@ from ..speech.speech_to_text import SpeechToText
 from ..speech.text_to_speech import TextToSpeech
 from ..storage import init_db
 from ..storage.repositories import (
+    ChannelRepository,
     GlossaryRepository,
     TranslationMemoryRepository,
 )
 from ..translator.languages import SUPPORTED_CODES, UnsupportedLanguageError
-from ..translator.styles import list_styles
+from ..translator.styles import list_emotions, list_styles, list_tones
 from ..translator.translation_memory import TranslationMemoryService
 from ..translator.translator_service import TranslatorService
 from ..translator.user_glossary import UserGlossaryService
-from . import routes_glossary, routes_memory
+from ..voices import VOICE_CATALOG, get_voice
+from . import routes_catalog, routes_channels, routes_glossary, routes_memory
 from .schemas import (
     HealthResponse,
     QualityReportSchema,
     STTResponse,
     STTResponseSegment,
-    StyleSchema,
     TTSRequest,
     TranslateRequest,
     TranslateResponse,
@@ -60,14 +55,18 @@ def build_app(
     tts: Optional[TextToSpeech] = None,
     glossary_repository: Optional[GlossaryRepository] = None,
     memory_repository: Optional[TranslationMemoryRepository] = None,
+    channel_repository: Optional[ChannelRepository] = None,
     settings: Optional[Settings] = None,
 ) -> FastAPI:
-    """Build a FastAPI app from already-constructed services."""
     settings = settings or get_settings()
     app = FastAPI(
         title="warehouse-ai-engine",
         version=__version__,
-        description="Translation, STT, TTS and video dubbing for ru/tk/tr/en.",
+        description=(
+            "AI translation / STT / TTS / dubbing engine for ru/tk/tr/en. "
+            "Supports user glossary, translation memory, channels (AI agents), "
+            "15 styles, 16 tones, 7 emotions and 23 voice profiles."
+        ),
     )
     app.add_middleware(
         CORSMiddleware,
@@ -90,29 +89,13 @@ def build_app(
                 "tts_fallback": getattr(tts.fallback, "name", None) if tts and tts.fallback else None,
                 "user_glossary": "sqlite" if translator.user_glossary else None,
                 "translation_memory": "sqlite" if translator.translation_memory else None,
+                "channels": "sqlite" if channel_repository else None,
             },
-            styles=[
-                StyleSchema(
-                    code=s.code,
-                    label_ru=s.label_ru,
-                    label_en=s.label_en,
-                    description=s.description,
-                )
-                for s in list_styles()
-            ],
+            styles_count=len(list_styles()),
+            tones_count=len(list_tones()),
+            emotions_count=len(list_emotions()),
+            voices_count=len(VOICE_CATALOG),
         )
-
-    @app.get("/v1/styles", response_model=list[StyleSchema])
-    def styles() -> list[StyleSchema]:
-        return [
-            StyleSchema(
-                code=s.code,
-                label_ru=s.label_ru,
-                label_en=s.label_en,
-                description=s.description,
-            )
-            for s in list_styles()
-        ]
 
     @app.post("/v1/translate", response_model=TranslateResponse)
     def translate(req: TranslateRequest) -> TranslateResponse:
@@ -122,6 +105,9 @@ def build_app(
                 source_lang=req.source_lang,
                 target_lang=req.target_lang,
                 style=req.style,
+                tone=req.tone,
+                emotion=req.emotion,
+                channel_id=req.channel_id,
             )
         except UnsupportedLanguageError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -139,6 +125,9 @@ def build_app(
             fallback_used=result.fallback_used,
             notes=result.notes,
             style=result.style,
+            tone=result.tone,
+            emotion=result.emotion,
+            channel_id=result.channel_id,
             tm_hit=result.tm_hit,
             user_glossary_hits=result.user_glossary_hits,
         )
@@ -174,8 +163,16 @@ def build_app(
     if tts is not None:
         @app.post("/v1/tts")
         def synthesize(req: TTSRequest) -> Response:
+            voice = req.voice
+            if req.voice_id:
+                profile = get_voice(req.voice_id)
+                if profile is None:
+                    raise HTTPException(
+                        status_code=400, detail=f"unknown voice_id={req.voice_id!r}"
+                    )
+                voice = profile.backend_voice or voice
             try:
-                out = tts.synthesize(req.text, language=req.language, voice=req.voice)
+                out = tts.synthesize(req.text, language=req.language, voice=voice)
             except UnsupportedLanguageError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
             except ProviderUnavailableError as exc:
@@ -189,6 +186,9 @@ def build_app(
         app.include_router(routes_glossary.build_router(glossary_repository))
     if memory_repository is not None:
         app.include_router(routes_memory.build_router(memory_repository))
+    if channel_repository is not None:
+        app.include_router(routes_channels.build_router(channel_repository))
+    app.include_router(routes_catalog.router)
 
     return app
 
@@ -200,6 +200,7 @@ def create_app() -> FastAPI:
 
     glossary_repo = GlossaryRepository()
     memory_repo = TranslationMemoryRepository()
+    channel_repo = ChannelRepository()
     user_glossary = UserGlossaryService(glossary_repo)
     translation_memory = TranslationMemoryService(memory_repo)
 
@@ -228,9 +229,9 @@ def create_app() -> FastAPI:
         tts=tts,
         glossary_repository=glossary_repo,
         memory_repository=memory_repo,
+        channel_repository=channel_repo,
         settings=settings,
     )
 
 
-# ASGI entry point for `uvicorn --factory src.api.main:create_app`.
-app = None  # populated lazily by uvicorn via the factory; see README.
+app = None  # ASGI lazy entry point; use `uvicorn --factory src.api.main:create_app`

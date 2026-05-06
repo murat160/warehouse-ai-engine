@@ -45,8 +45,10 @@ def _system_prompt(
     target_lang: str,
     literary: bool,
     style: Optional[str] = None,
+    tone: Optional[str] = None,
+    emotion: Optional[str] = None,
 ) -> str:
-    from ..translator.styles import build_prompt_hint, get_style
+    from ..translator.styles import build_prompt_hint, get_emotion, get_style, get_tone
 
     src = LANGUAGES[source_lang]
     tgt = LANGUAGES[target_lang]
@@ -57,16 +59,20 @@ def _system_prompt(
         "language labels, and no explanation."
     )
 
-    # Resolve the style profile: explicit style wins, otherwise legacy
-    # ``literary`` flag and the priority ru<->tk pair upgrade us to literary.
     if style:
         profile = get_style(style)
-    elif literary or {source_lang, target_lang} == {"ru", "tk"}:
+    elif literary:
         profile = get_style("literary")
     else:
-        profile = get_style("neutral")
+        # Default is NATURAL — living, native phrasing for the target language.
+        profile = get_style("natural")
 
-    base += " " + build_prompt_hint(profile, target_lang)
+    tone_profile = get_tone(tone)
+    emotion_profile = get_emotion(emotion)
+
+    base += " " + build_prompt_hint(
+        profile, target_lang, tone=tone_profile, emotion=emotion_profile
+    )
     base += " Preserve names, numbers and punctuation."
     return base
 
@@ -99,6 +105,8 @@ class OpenAIProvider(TranslationProvider, STTProvider, TTSProvider):
         target_lang: str,
         literary: bool = False,
         style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
     ) -> str:
         if not text.strip():
             return ""
@@ -110,7 +118,10 @@ class OpenAIProvider(TranslationProvider, STTProvider, TTSProvider):
                 messages=[
                     {
                         "role": "system",
-                        "content": _system_prompt(source_lang, target_lang, literary, style),
+                        "content": _system_prompt(
+                            source_lang, target_lang, literary,
+                            style=style, tone=tone, emotion=emotion,
+                        ),
                     },
                     {"role": "user", "content": text},
                 ],

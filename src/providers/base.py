@@ -45,12 +45,15 @@ class TranslationProvider(ABC):
         target_lang: str,
         literary: bool = False,
         style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
     ) -> str:
         """Translate ``text`` from ``source_lang`` to ``target_lang``.
 
-        ``literary`` is a legacy boolean hint kept for back-compat — prefer
-        ``style="literary"`` (or any other :class:`TranslationStyle` value).
-        ``style`` selects the register/emotion the provider should aim for.
+        ``literary`` is kept for back-compat. ``style`` selects the register
+        (15 values), ``tone`` the manner of delivery (16 values),
+        ``emotion`` the colouring (7 values). Providers that cannot honour
+        a specific axis should ignore it without raising.
         """
 
 

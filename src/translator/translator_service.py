@@ -1,14 +1,15 @@
-"""High-level translation orchestrator.
+"""High-level, channel-aware translation orchestrator.
 
-End-to-end flow for a single translation request:
+Flow per request:
 
   1. validate language pair,
-  2. consult the **translation memory** — if the same source was curated
-     before, return that translation immediately (zero model calls),
-  3. otherwise run the primary provider with the requested style; fall back
-     to a secondary provider on error,
+  2. consult **Translation Memory** — first the active channel's TM, then
+     the global TM. On hit: short-circuit, apply user glossary, run QA.
+  3. otherwise call the primary provider with the requested style + tone +
+     emotion; fall back to a secondary provider on error.
   4. apply the static curated glossary (built-in ru<->tk fixes),
-  5. apply the user-editable glossary (DB-backed, has highest priority),
+  5. apply the **user glossary** — global rules first, channel rules last
+     so channel rules always win,
   6. run the heuristic quality check.
 """
 
@@ -27,7 +28,14 @@ from ..providers.base import (
 from .glossary import Glossary
 from .languages import LanguagePair, normalize_language
 from .quality_check import QualityReport, check as quality_check
-from .styles import TranslationStyle, get_style
+from .styles import (
+    DeliveryTone,
+    Emotion,
+    TranslationStyle,
+    get_emotion,
+    get_style,
+    get_tone,
+)
 from .translation_memory import TranslationMemoryService
 from .user_glossary import UserGlossaryService
 
@@ -46,7 +54,10 @@ class TranslationResult:
     quality: QualityReport
     fallback_used: bool = False
     notes: List[str] = field(default_factory=list)
-    style: str = TranslationStyle.NEUTRAL.value
+    style: str = TranslationStyle.NATURAL.value
+    tone: Optional[str] = None
+    emotion: str = Emotion.NEUTRAL.value
+    channel_id: Optional[str] = None
     tm_hit: bool = False
     user_glossary_hits: List[str] = field(default_factory=list)
 
@@ -65,7 +76,7 @@ class TranslatorService:
         use_glossary: bool = True,
         run_quality_check: bool = True,
         latency_budget: float = 0.3,
-        default_style: str = TranslationStyle.NEUTRAL.value,
+        default_style: str = TranslationStyle.NATURAL.value,
     ) -> None:
         self.primary = primary
         self.fallback = fallback
@@ -84,10 +95,15 @@ class TranslatorService:
         source_lang: str,
         target_lang: str,
         style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
+        channel_id: Optional[str] = None,
     ) -> TranslationResult:
         pair = LanguagePair.of(source_lang, target_lang)
         notes: List[str] = []
         resolved_style = get_style(style or self.default_style)
+        resolved_tone = get_tone(tone)
+        resolved_emotion = get_emotion(emotion)
 
         if not text or not text.strip():
             return TranslationResult(
@@ -99,19 +115,25 @@ class TranslatorService:
                 quality=QualityReport(ok=True, score=1.0, issues=[]),
                 notes=["empty input"],
                 style=resolved_style.code,
+                tone=resolved_tone.code if resolved_tone else None,
+                emotion=resolved_emotion.code if resolved_emotion else Emotion.NEUTRAL.value,
+                channel_id=channel_id,
             )
 
-        # 1) Translation Memory short-circuit.
+        # 1) Translation Memory short-circuit (channel-scoped first).
         tm_hit = False
         if self.translation_memory is not None:
             hit = self.translation_memory.lookup(
                 text=text,
                 source_lang=pair.source.code,
                 target_lang=pair.target.code,
+                channel_id=channel_id,
             )
             if hit is not None:
                 tm_hit = True
-                polished = self._apply_user_glossary(hit.entry.target_text, pair, notes)
+                polished = self._apply_user_glossary(
+                    hit.entry.target_text, pair, channel_id, notes
+                )
                 report = self._maybe_check(text, polished, pair)
                 return TranslationResult(
                     text=polished,
@@ -123,19 +145,27 @@ class TranslatorService:
                     fallback_used=False,
                     notes=notes + ["translation memory hit"],
                     style=resolved_style.code,
+                    tone=resolved_tone.code if resolved_tone else None,
+                    emotion=resolved_emotion.code if resolved_emotion else Emotion.NEUTRAL.value,
+                    channel_id=channel_id,
                     tm_hit=True,
-                    user_glossary_hits=self._detect_user_terms(polished, pair),
+                    user_glossary_hits=self._detect_user_terms(polished, pair, channel_id),
                 )
 
         # 2) Provider call (with fallback).
         provider, used_fallback, raw, latency = self._run_with_fallback(
-            text=text, pair=pair, notes=notes, style=resolved_style.code
+            text=text,
+            pair=pair,
+            notes=notes,
+            style=resolved_style.code,
+            tone=resolved_tone.code if resolved_tone else None,
+            emotion=resolved_emotion.code if resolved_emotion else None,
         )
 
         # 3) Static curated glossary post-processing.
         polished = self._postprocess(raw, pair=pair)
-        # 4) User glossary post-processing — wins over the curated one.
-        polished = self._apply_user_glossary(polished, pair, notes)
+        # 4) User glossary post-processing — channel rules win.
+        polished = self._apply_user_glossary(polished, pair, channel_id, notes)
 
         report = self._maybe_check(text, polished, pair)
 
@@ -154,8 +184,11 @@ class TranslatorService:
             fallback_used=used_fallback,
             notes=notes,
             style=resolved_style.code,
+            tone=resolved_tone.code if resolved_tone else None,
+            emotion=resolved_emotion.code if resolved_emotion else Emotion.NEUTRAL.value,
+            channel_id=channel_id,
             tm_hit=tm_hit,
-            user_glossary_hits=self._detect_user_terms(polished, pair),
+            user_glossary_hits=self._detect_user_terms(polished, pair, channel_id),
         )
 
     # ------------------------------------------------------------------
@@ -167,6 +200,8 @@ class TranslatorService:
         pair: LanguagePair,
         notes: List[str],
         style: str,
+        tone: Optional[str],
+        emotion: Optional[str],
     ):
         primary_name = getattr(self.primary, "name", "primary")
         start = time.perf_counter()
@@ -179,6 +214,8 @@ class TranslatorService:
                 target_lang=pair.target.code,
                 literary=pair.is_priority,
                 style=style,
+                tone=tone,
+                emotion=emotion,
             )
             return primary_name, False, translated, time.perf_counter() - start
         except (ProviderUnavailableError, ProviderError) as exc:
@@ -194,6 +231,8 @@ class TranslatorService:
             target_lang=pair.target.code,
             literary=pair.is_priority,
             style=style,
+            tone=tone,
+            emotion=emotion,
         )
         return fallback_name, True, translated, time.perf_counter() - start_fb
 
@@ -203,27 +242,42 @@ class TranslatorService:
         return self.glossary.apply(text, pair.source.code, pair.target.code)
 
     def _apply_user_glossary(
-        self, text: str, pair: LanguagePair, notes: List[str]
+        self,
+        text: str,
+        pair: LanguagePair,
+        channel_id: Optional[str],
+        notes: List[str],
     ) -> str:
         if self.user_glossary is None or not text:
             return text
         try:
             return self.user_glossary.apply(
-                text, source_lang=pair.source.code, target_lang=pair.target.code
+                text,
+                source_lang=pair.source.code,
+                target_lang=pair.target.code,
+                channel_id=channel_id,
             )
-        except Exception as exc:  # noqa: BLE001 - never break translation flow
+        except Exception as exc:  # noqa: BLE001
             logger.warning("user glossary apply failed: %s", exc)
             notes.append(f"user glossary error: {exc}")
             return text
 
-    def _detect_user_terms(self, text: str, pair: LanguagePair) -> List[str]:
+    def _detect_user_terms(
+        self,
+        text: str,
+        pair: LanguagePair,
+        channel_id: Optional[str],
+    ) -> List[str]:
         if self.user_glossary is None or not text:
             return []
         try:
             hits = self.user_glossary.detect_terms(
-                text, source_lang=pair.source.code, target_lang=pair.target.code
+                text,
+                source_lang=pair.source.code,
+                target_lang=pair.target.code,
+                channel_id=channel_id,
             )
-        except Exception:  # noqa: BLE001 - diagnostics path, never raise
+        except Exception:  # noqa: BLE001
             return []
         return [h.target_text for h in hits]
 
@@ -242,13 +296,23 @@ class TranslatorService:
             target_lang=pair.target.code,
         )
 
-    # Convenience: translate using string codes without building LanguagePair.
     def translate_text(
-        self, text: str, src: str, tgt: str, *, style: Optional[str] = None
+        self,
+        text: str,
+        src: str,
+        tgt: str,
+        *,
+        style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
+        channel_id: Optional[str] = None,
     ) -> str:
         return self.translate(
             text=text,
             source_lang=normalize_language(src),
             target_lang=normalize_language(tgt),
             style=style,
+            tone=tone,
+            emotion=emotion,
+            channel_id=channel_id,
         ).text

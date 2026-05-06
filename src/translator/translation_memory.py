@@ -1,9 +1,4 @@
-"""Translation Memory service: exact-segment lookup and curation.
-
-Distinct from the user glossary — TM stores whole-segment overrides
-("быстрая доставка" → curated translation) so the engine can short-circuit
-the model when a known phrase is requested again.
-"""
+"""Channel-aware Translation Memory service."""
 
 from __future__ import annotations
 
@@ -18,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TranslationMemoryHit:
-    """Result of a TM lookup that the orchestrator can short-circuit on."""
-
     entry: TranslationMemoryDTO
     used_short_circuit: bool = True
 
@@ -29,13 +22,20 @@ class TranslationMemoryService:
         self.repository = repository
 
     def lookup(
-        self, *, text: str, source_lang: str, target_lang: str
+        self,
+        *,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        channel_id: Optional[str] = None,
     ) -> Optional[TranslationMemoryHit]:
-        """Return a hit when ``text`` (normalised) matches a stored segment."""
         if not text or not text.strip():
             return None
         match = self.repository.find_exact(
-            source_text=text, source_lang=source_lang, target_lang=target_lang
+            source_text=text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            channel_id=channel_id,
         )
         if match is None:
             return None
@@ -50,8 +50,8 @@ class TranslationMemoryService:
         target_lang: str,
         score: float = 1.0,
         note: Optional[str] = None,
+        channel_id: Optional[str] = None,
     ) -> TranslationMemoryDTO:
-        """Persist a new (or update an existing) segment-level override."""
         return self.repository.upsert(
             source_lang=source_lang,
             target_lang=target_lang,
@@ -59,6 +59,7 @@ class TranslationMemoryService:
             target_text=target_text,
             score=score,
             note=note,
+            channel_id=channel_id,
         )
 
 

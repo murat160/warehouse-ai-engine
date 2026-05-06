@@ -1,16 +1,10 @@
-"""User-editable glossary application service.
-
-Wraps :class:`GlossaryRepository` to provide post-translation replacement
-that respects per-entry case-sensitivity and whole-word flags. Distinct from
-the static curated :mod:`src.translator.glossary` — that one ships built-in
-ru↔tk fixes, this one is whatever the operator added at runtime.
-"""
+"""User-editable glossary application service (channel-aware)."""
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import List
+from typing import List, Optional
 
 from ..storage.repositories import GlossaryEntryDTO, GlossaryRepository
 
@@ -28,22 +22,54 @@ def _build_pattern(entry: GlossaryEntryDTO) -> re.Pattern[str]:
 
 
 class UserGlossaryService:
-    """Apply user glossary rules and answer search queries."""
+    """Apply user glossary rules and answer search queries.
+
+    When ``channel_id`` is provided, channel-scoped rules are applied **after**
+    the global ones — that way a channel-specific replacement always wins.
+    """
 
     def __init__(self, repository: GlossaryRepository) -> None:
         self.repository = repository
 
-    def apply(self, text: str, *, source_lang: str, target_lang: str) -> str:
-        """Substitute every glossary match in ``text`` with its target form."""
+    def _collect_rules(
+        self, source_lang: str, target_lang: str, channel_id: Optional[str]
+    ) -> List[GlossaryEntryDTO]:
+        global_rules = self.repository.list(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            limit=1000,
+            channel_id=None,  # global only
+        )
+        rules: List[GlossaryEntryDTO] = list(global_rules)
+        if channel_id is not None:
+            channel_rules = self.repository.list(
+                source_lang=source_lang,
+                target_lang=target_lang,
+                limit=1000,
+                channel_id=channel_id,
+            )
+            rules.extend(channel_rules)
+        return rules
+
+    def apply(
+        self,
+        text: str,
+        *,
+        source_lang: str,
+        target_lang: str,
+        channel_id: Optional[str] = None,
+    ) -> str:
         if not text:
             return text
-        rules = self.repository.list(
-            source_lang=source_lang, target_lang=target_lang, limit=1000
-        )
+        rules = self._collect_rules(source_lang, target_lang, channel_id)
         if not rules:
             return text
-        # Apply longer source first so multi-word rules win over single-word ones.
-        rules.sort(key=lambda e: len(e.source_text), reverse=True)
+        # Longer source first; among equal-length, channel rules last so they
+        # override globals.
+        rules.sort(
+            key=lambda e: (len(e.source_text), 1 if e.channel_id else 0),
+            reverse=True,
+        )
         result = text
         for rule in rules:
             try:
@@ -55,14 +81,16 @@ class UserGlossaryService:
         return result
 
     def detect_terms(
-        self, text: str, *, source_lang: str, target_lang: str
+        self,
+        text: str,
+        *,
+        source_lang: str,
+        target_lang: str,
+        channel_id: Optional[str] = None,
     ) -> List[GlossaryEntryDTO]:
-        """Return every glossary entry whose source appears in ``text``."""
         if not text:
             return []
-        rules = self.repository.list(
-            source_lang=source_lang, target_lang=target_lang, limit=1000
-        )
+        rules = self._collect_rules(source_lang, target_lang, channel_id)
         hits: List[GlossaryEntryDTO] = []
         for rule in rules:
             try:

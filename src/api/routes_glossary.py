@@ -23,6 +23,10 @@ def build_router(repository: GlossaryRepository) -> APIRouter:
         source_lang: Optional[str] = Query(default=None),
         target_lang: Optional[str] = Query(default=None),
         q: Optional[str] = Query(default=None, description="Free-text search"),
+        channel_id: Optional[str] = Query(
+            default=None,
+            description="Set to '__global__' to fetch global-only entries.",
+        ),
         limit: int = Query(default=200, ge=1, le=1000),
     ) -> List[GlossaryEntrySchema]:
         try:
@@ -30,9 +34,12 @@ def build_router(repository: GlossaryRepository) -> APIRouter:
             tgt = normalize_language(target_lang) if target_lang else None
         except UnsupportedLanguageError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        entries = repository.list(
-            source_lang=src, target_lang=tgt, query=q, limit=limit
-        )
+        kwargs = {"source_lang": src, "target_lang": tgt, "query": q, "limit": limit}
+        if channel_id == "__global__":
+            kwargs["channel_id"] = None
+        elif channel_id:
+            kwargs["channel_id"] = channel_id
+        entries = repository.list(**kwargs)
         return [GlossaryEntrySchema(**e.__dict__) for e in entries]
 
     @router.post("", response_model=GlossaryEntrySchema, status_code=201)
@@ -51,6 +58,7 @@ def build_router(repository: GlossaryRepository) -> APIRouter:
                 case_sensitive=req.case_sensitive,
                 whole_word=req.whole_word,
                 note=req.note,
+                channel_id=req.channel_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -65,14 +73,17 @@ def build_router(repository: GlossaryRepository) -> APIRouter:
 
     @router.patch("/{entry_id}", response_model=GlossaryEntrySchema)
     def update(entry_id: str, req: GlossaryUpdateRequest) -> GlossaryEntrySchema:
-        entry = repository.update(
-            entry_id,
+        kwargs = dict(
             source_text=req.source_text,
             target_text=req.target_text,
             case_sensitive=req.case_sensitive,
             whole_word=req.whole_word,
             note=req.note,
         )
+        # Only forward channel_id when the client included it explicitly.
+        if "channel_id" in req.model_fields_set:
+            kwargs["channel_id"] = req.channel_id
+        entry = repository.update(entry_id, **kwargs)
         if entry is None:
             raise HTTPException(status_code=404, detail=f"glossary entry {entry_id} not found")
         return GlossaryEntrySchema(**entry.__dict__)

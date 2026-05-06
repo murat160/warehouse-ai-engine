@@ -1,4 +1,4 @@
-"""ORM models for the user glossary and the translation memory."""
+"""ORM models for channels, glossary and translation memory."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, Index, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    Boolean, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
 
@@ -22,12 +24,7 @@ def _utcnow() -> datetime:
 
 
 def normalize_for_match(text: str) -> str:
-    """Normalise text for translation-memory exact lookup.
-
-    The TM only uses this to detect when *the same input* was translated
-    before — case, surrounding whitespace and trivial punctuation differences
-    should not block a hit.
-    """
+    """Normalise text for translation-memory exact lookup."""
     if not text:
         return ""
     collapsed = " ".join(text.strip().split())
@@ -38,12 +35,78 @@ def hash_for_match(text: str) -> str:
     return hashlib.sha256(normalize_for_match(text).encode("utf-8")).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# Channel / AI-agent
+# ---------------------------------------------------------------------------
+
+
+class Channel(Base):
+    """An AI-agent / content channel — bundles default style, tone, voice."""
+
+    __tablename__ = "channels"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+
+    primary_lang: Mapped[str] = mapped_column(String(8), default="ru")
+    target_lang: Mapped[Optional[str]] = mapped_column(String(8), nullable=True, default=None)
+
+    style: Mapped[str] = mapped_column(String(40), default="natural")
+    tone: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, default=None)
+    emotion: Mapped[str] = mapped_column(String(40), default="neutral")
+    voice_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, default=None)
+
+    voice_use_case: Mapped[str] = mapped_column(String(20), default="video")
+    dubbing_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    glossary_entries: Mapped[list["GlossaryEntry"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan"
+    )
+    memory_entries: Mapped[list["TranslationMemoryEntry"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "primary_lang": self.primary_lang,
+            "target_lang": self.target_lang,
+            "style": self.style,
+            "tone": self.tone,
+            "emotion": self.emotion,
+            "voice_id": self.voice_id,
+            "voice_use_case": self.voice_use_case,
+            "dubbing_notes": self.dubbing_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Glossary
+# ---------------------------------------------------------------------------
+
+
 class GlossaryEntry(Base):
     """User-editable, per-pair word/phrase replacement."""
 
     __tablename__ = "glossary_entries"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
     source_lang: Mapped[str] = mapped_column(String(8), index=True)
     target_lang: Mapped[str] = mapped_column(String(8), index=True)
     source_text: Mapped[str] = mapped_column(String(512))
@@ -56,6 +119,8 @@ class GlossaryEntry(Base):
         DateTime, default=_utcnow, onupdate=_utcnow
     )
 
+    channel: Mapped[Optional["Channel"]] = relationship(back_populates="glossary_entries")
+
     __table_args__ = (
         Index(
             "ix_glossary_pair_source",
@@ -66,6 +131,7 @@ class GlossaryEntry(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "channel_id": self.channel_id,
             "source_lang": self.source_lang,
             "target_lang": self.target_lang,
             "source_text": self.source_text,
@@ -78,12 +144,23 @@ class GlossaryEntry(Base):
         }
 
 
+# ---------------------------------------------------------------------------
+# Translation memory
+# ---------------------------------------------------------------------------
+
+
 class TranslationMemoryEntry(Base):
     """Whole-segment translation memory (input → curated translation)."""
 
     __tablename__ = "translation_memory"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
     source_lang: Mapped[str] = mapped_column(String(8), index=True)
     target_lang: Mapped[str] = mapped_column(String(8), index=True)
     source_text: Mapped[str] = mapped_column(Text)
@@ -96,9 +173,11 @@ class TranslationMemoryEntry(Base):
         DateTime, default=_utcnow, onupdate=_utcnow
     )
 
+    channel: Mapped[Optional["Channel"]] = relationship(back_populates="memory_entries")
+
     __table_args__ = (
         UniqueConstraint(
-            "source_lang", "target_lang", "source_hash",
+            "source_lang", "target_lang", "source_hash", "channel_id",
             name="uq_tm_pair_hash",
         ),
     )
@@ -106,6 +185,7 @@ class TranslationMemoryEntry(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "channel_id": self.channel_id,
             "source_lang": self.source_lang,
             "target_lang": self.target_lang,
             "source_text": self.source_text,

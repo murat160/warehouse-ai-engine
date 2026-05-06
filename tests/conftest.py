@@ -46,6 +46,8 @@ class FakeTranslationProvider(TranslationProvider):
         target_lang: str,
         literary: bool = False,
         style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
     ) -> str:
         if not self._available:
             raise ProviderUnavailableError("fake provider disabled")

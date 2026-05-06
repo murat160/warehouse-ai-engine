@@ -43,7 +43,6 @@ def init_db(url: Optional[str] = None) -> Engine:
     with _init_lock:
         resolved = _resolve_url(url)
         if resolved.startswith("sqlite"):
-            # Make sure the parent directory exists for relative paths.
             db_path = resolved.replace("sqlite:///", "")
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         _engine = create_engine(
@@ -56,8 +55,42 @@ def init_db(url: Optional[str] = None) -> Engine:
         from . import models  # noqa: F401  -- side-effect import
 
         Base.metadata.create_all(_engine)
+        _ensure_channel_id_columns(_engine)
         _session_factory = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
+
+
+def _ensure_channel_id_columns(engine: Engine) -> None:
+    """Light-weight migration: add ``channel_id`` to legacy SQLite tables.
+
+    The Channel feature was added after the initial schema, so an existing
+    SQLite file from before this change lacks the new column. SQLAlchemy's
+    ``create_all`` will not alter an existing table — we patch missing
+    columns here so users do not have to delete ``data/warehouse_ai.db``.
+    """
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        for table in ("glossary_entries", "translation_memory"):
+            try:
+                cols = {
+                    row[1]
+                    for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")
+                }
+            except Exception:
+                continue
+            if not cols:
+                continue
+            if "channel_id" not in cols:
+                conn.exec_driver_sql(
+                    f"ALTER TABLE {table} ADD COLUMN channel_id VARCHAR(32)"
+                )
+                conn.exec_driver_sql(
+                    f"CREATE INDEX IF NOT EXISTS "
+                    f"ix_{table}_channel_id ON {table} (channel_id)"
+                )
 
 
 def get_engine() -> Engine:

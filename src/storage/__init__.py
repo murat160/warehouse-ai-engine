@@ -5,11 +5,17 @@ to PostgreSQL only requires changing ``DATABASE_URL``.
 """
 
 from .db import Base, init_db, session_scope
-from .models import GlossaryEntry, TranslationMemoryEntry
-from .repositories import GlossaryRepository, TranslationMemoryRepository
+from .models import Channel, GlossaryEntry, TranslationMemoryEntry
+from .repositories import (
+    ChannelRepository,
+    GlossaryRepository,
+    TranslationMemoryRepository,
+)
 
 __all__ = [
     "Base",
+    "Channel",
+    "ChannelRepository",
     "GlossaryEntry",
     "GlossaryRepository",
     "TranslationMemoryEntry",

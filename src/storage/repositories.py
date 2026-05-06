@@ -1,4 +1,4 @@
-"""Repository layer for glossary and translation memory.
+"""Repository layer for channels, glossary and translation memory.
 
 The translator service depends only on these repositories — never on
 SQLAlchemy directly — so we can replace the backing store (PostgreSQL,
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .db import session_scope
 from .models import (
+    Channel,
     GlossaryEntry,
     TranslationMemoryEntry,
     hash_for_match,
@@ -29,6 +30,37 @@ from .models import (
 
 
 @dataclass(frozen=True)
+class ChannelDTO:
+    id: str
+    name: str
+    description: Optional[str]
+    primary_lang: str
+    target_lang: Optional[str]
+    style: str
+    tone: Optional[str]
+    emotion: str
+    voice_id: Optional[str]
+    voice_use_case: str
+    dubbing_notes: Optional[str]
+
+    @classmethod
+    def from_orm(cls, e: Channel) -> "ChannelDTO":
+        return cls(
+            id=e.id,
+            name=e.name,
+            description=e.description,
+            primary_lang=e.primary_lang,
+            target_lang=e.target_lang,
+            style=e.style,
+            tone=e.tone,
+            emotion=e.emotion,
+            voice_id=e.voice_id,
+            voice_use_case=e.voice_use_case,
+            dubbing_notes=e.dubbing_notes,
+        )
+
+
+@dataclass(frozen=True)
 class GlossaryEntryDTO:
     id: str
     source_lang: str
@@ -38,6 +70,7 @@ class GlossaryEntryDTO:
     case_sensitive: bool = False
     whole_word: bool = True
     note: Optional[str] = None
+    channel_id: Optional[str] = None
 
     @classmethod
     def from_orm(cls, e: GlossaryEntry) -> "GlossaryEntryDTO":
@@ -50,6 +83,7 @@ class GlossaryEntryDTO:
             case_sensitive=bool(e.case_sensitive),
             whole_word=bool(e.whole_word),
             note=e.note,
+            channel_id=e.channel_id,
         )
 
 
@@ -62,6 +96,7 @@ class TranslationMemoryDTO:
     target_text: str
     score: float = 1.0
     note: Optional[str] = None
+    channel_id: Optional[str] = None
 
     @classmethod
     def from_orm(cls, e: TranslationMemoryEntry) -> "TranslationMemoryDTO":
@@ -73,11 +108,134 @@ class TranslationMemoryDTO:
             target_text=e.target_text,
             score=float(e.score or 1.0),
             note=e.note,
+            channel_id=e.channel_id,
         )
 
 
 class DuplicateEntryError(ValueError):
     """Raised when a unique constraint already exists for an entry."""
+
+
+# Sentinel value used to distinguish "channel filter not provided" from
+# "filter for global entries (channel_id IS NULL)".
+_UNSET = object()
+
+
+# ---------------------------------------------------------------------------
+# Channels
+# ---------------------------------------------------------------------------
+
+
+class ChannelRepository:
+    """CRUD for channels / AI-agents."""
+
+    def __init__(self, session_provider=session_scope) -> None:
+        self._session_provider = session_provider
+
+    def list(self, *, limit: int = 200) -> List[ChannelDTO]:
+        with self._session_provider() as session:
+            stmt = select(Channel).order_by(Channel.updated_at.desc()).limit(limit)
+            return [ChannelDTO.from_orm(e) for e in session.execute(stmt).scalars()]
+
+    def get(self, channel_id: str) -> Optional[ChannelDTO]:
+        with self._session_provider() as session:
+            entity = session.get(Channel, channel_id)
+            return ChannelDTO.from_orm(entity) if entity else None
+
+    def get_by_name(self, name: str) -> Optional[ChannelDTO]:
+        with self._session_provider() as session:
+            stmt = select(Channel).where(Channel.name == name).limit(1)
+            entity = session.execute(stmt).scalar_one_or_none()
+            return ChannelDTO.from_orm(entity) if entity else None
+
+    def create(
+        self,
+        *,
+        name: str,
+        primary_lang: str = "ru",
+        target_lang: Optional[str] = None,
+        style: str = "natural",
+        tone: Optional[str] = None,
+        emotion: str = "neutral",
+        voice_id: Optional[str] = None,
+        voice_use_case: str = "video",
+        description: Optional[str] = None,
+        dubbing_notes: Optional[str] = None,
+    ) -> ChannelDTO:
+        if not name.strip():
+            raise ValueError("name is required")
+        with self._session_provider() as session:
+            entity = Channel(
+                name=name.strip(),
+                primary_lang=primary_lang,
+                target_lang=target_lang,
+                style=style,
+                tone=tone,
+                emotion=emotion,
+                voice_id=voice_id,
+                voice_use_case=voice_use_case,
+                description=description,
+                dubbing_notes=dubbing_notes,
+            )
+            session.add(entity)
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                raise DuplicateEntryError(f"channel '{name}' already exists") from exc
+            return ChannelDTO.from_orm(entity)
+
+    def update(
+        self,
+        channel_id: str,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        primary_lang: Optional[str] = None,
+        target_lang: Optional[str] = None,
+        style: Optional[str] = None,
+        tone: Optional[str] = None,
+        emotion: Optional[str] = None,
+        voice_id: Optional[str] = None,
+        voice_use_case: Optional[str] = None,
+        dubbing_notes: Optional[str] = None,
+    ) -> Optional[ChannelDTO]:
+        with self._session_provider() as session:
+            entity = session.get(Channel, channel_id)
+            if entity is None:
+                return None
+            if name is not None:
+                entity.name = name.strip()
+            if description is not None:
+                entity.description = description
+            if primary_lang is not None:
+                entity.primary_lang = primary_lang
+            if target_lang is not None:
+                entity.target_lang = target_lang
+            if style is not None:
+                entity.style = style
+            if tone is not None:
+                entity.tone = tone
+            if emotion is not None:
+                entity.emotion = emotion
+            if voice_id is not None:
+                entity.voice_id = voice_id
+            if voice_use_case is not None:
+                entity.voice_use_case = voice_use_case
+            if dubbing_notes is not None:
+                entity.dubbing_notes = dubbing_notes
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                raise DuplicateEntryError(str(exc)) from exc
+            return ChannelDTO.from_orm(entity)
+
+    def delete(self, channel_id: str) -> bool:
+        with self._session_provider() as session:
+            entity = session.get(Channel, channel_id)
+            if entity is None:
+                return False
+            session.delete(entity)
+            return True
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +256,7 @@ class GlossaryRepository:
         target_lang: Optional[str] = None,
         query: Optional[str] = None,
         limit: int = 200,
+        channel_id=_UNSET,  # _UNSET = no filter; None = global only; str = that channel
     ) -> List[GlossaryEntryDTO]:
         with self._session_provider() as session:
             stmt = select(GlossaryEntry)
@@ -105,6 +264,11 @@ class GlossaryRepository:
                 stmt = stmt.where(GlossaryEntry.source_lang == source_lang)
             if target_lang:
                 stmt = stmt.where(GlossaryEntry.target_lang == target_lang)
+            if channel_id is not _UNSET:
+                if channel_id is None:
+                    stmt = stmt.where(GlossaryEntry.channel_id.is_(None))
+                else:
+                    stmt = stmt.where(GlossaryEntry.channel_id == channel_id)
             if query:
                 like = f"%{query.lower()}%"
                 stmt = stmt.where(
@@ -131,6 +295,7 @@ class GlossaryRepository:
         case_sensitive: bool = False,
         whole_word: bool = True,
         note: Optional[str] = None,
+        channel_id: Optional[str] = None,
     ) -> GlossaryEntryDTO:
         if not source_text.strip() or not target_text.strip():
             raise ValueError("source_text and target_text must not be empty")
@@ -143,6 +308,7 @@ class GlossaryRepository:
                 case_sensitive=case_sensitive,
                 whole_word=whole_word,
                 note=note,
+                channel_id=channel_id,
             )
             session.add(entity)
             session.flush()
@@ -157,6 +323,7 @@ class GlossaryRepository:
         case_sensitive: Optional[bool] = None,
         whole_word: Optional[bool] = None,
         note: Optional[str] = None,
+        channel_id=_UNSET,
     ) -> Optional[GlossaryEntryDTO]:
         with self._session_provider() as session:
             entity = session.get(GlossaryEntry, entry_id)
@@ -172,6 +339,8 @@ class GlossaryRepository:
                 entity.whole_word = whole_word
             if note is not None:
                 entity.note = note
+            if channel_id is not _UNSET:
+                entity.channel_id = channel_id  # may be None to detach
             session.flush()
             return GlossaryEntryDTO.from_orm(entity)
 
@@ -184,9 +353,17 @@ class GlossaryRepository:
             return True
 
     def find_match(
-        self, *, source_text: str, source_lang: str, target_lang: str
+        self,
+        *,
+        source_text: str,
+        source_lang: str,
+        target_lang: str,
+        channel_id: Optional[str] = None,
     ) -> Optional[GlossaryEntryDTO]:
-        """Return the strongest exact source-side match for ``source_text``."""
+        """Return the strongest exact source-side match for ``source_text``.
+
+        If ``channel_id`` is given, channel-scoped entries win over global ones.
+        """
         if not source_text.strip():
             return None
         normalised = source_text.strip().lower()
@@ -196,15 +373,23 @@ class GlossaryRepository:
                 .where(GlossaryEntry.source_lang == source_lang)
                 .where(GlossaryEntry.target_lang == target_lang)
             )
+            channel_match: Optional[GlossaryEntry] = None
+            global_match: Optional[GlossaryEntry] = None
             for entity in session.execute(stmt).scalars():
                 stored = entity.source_text
                 if entity.case_sensitive:
-                    if stored == source_text.strip():
-                        return GlossaryEntryDTO.from_orm(entity)
+                    matched = stored == source_text.strip()
                 else:
-                    if stored.lower() == normalised:
-                        return GlossaryEntryDTO.from_orm(entity)
-        return None
+                    matched = stored.lower() == normalised
+                if not matched:
+                    continue
+                if channel_id is not None and entity.channel_id == channel_id:
+                    channel_match = entity
+                    break
+                if entity.channel_id is None:
+                    global_match = entity
+            chosen = channel_match or global_match
+            return GlossaryEntryDTO.from_orm(chosen) if chosen else None
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +410,7 @@ class TranslationMemoryRepository:
         target_lang: Optional[str] = None,
         query: Optional[str] = None,
         limit: int = 200,
+        channel_id=_UNSET,
     ) -> List[TranslationMemoryDTO]:
         with self._session_provider() as session:
             stmt = select(TranslationMemoryEntry)
@@ -232,6 +418,11 @@ class TranslationMemoryRepository:
                 stmt = stmt.where(TranslationMemoryEntry.source_lang == source_lang)
             if target_lang:
                 stmt = stmt.where(TranslationMemoryEntry.target_lang == target_lang)
+            if channel_id is not _UNSET:
+                if channel_id is None:
+                    stmt = stmt.where(TranslationMemoryEntry.channel_id.is_(None))
+                else:
+                    stmt = stmt.where(TranslationMemoryEntry.channel_id == channel_id)
             if query:
                 like = f"%{query.lower()}%"
                 stmt = stmt.where(
@@ -251,8 +442,14 @@ class TranslationMemoryRepository:
             return TranslationMemoryDTO.from_orm(entity) if entity else None
 
     def find_exact(
-        self, *, source_text: str, source_lang: str, target_lang: str
+        self,
+        *,
+        source_text: str,
+        source_lang: str,
+        target_lang: str,
+        channel_id: Optional[str] = None,
     ) -> Optional[TranslationMemoryDTO]:
+        """Find an exact-match TM entry. Channel-scoped wins over global."""
         if not source_text.strip():
             return None
         digest = hash_for_match(source_text)
@@ -262,10 +459,17 @@ class TranslationMemoryRepository:
                 .where(TranslationMemoryEntry.source_lang == source_lang)
                 .where(TranslationMemoryEntry.target_lang == target_lang)
                 .where(TranslationMemoryEntry.source_hash == digest)
-                .limit(1)
             )
-            entity = session.execute(stmt).scalar_one_or_none()
-            return TranslationMemoryDTO.from_orm(entity) if entity else None
+            channel_match: Optional[TranslationMemoryEntry] = None
+            global_match: Optional[TranslationMemoryEntry] = None
+            for entity in session.execute(stmt).scalars():
+                if channel_id is not None and entity.channel_id == channel_id:
+                    channel_match = entity
+                    break
+                if entity.channel_id is None:
+                    global_match = entity
+            chosen = channel_match or global_match
+            return TranslationMemoryDTO.from_orm(chosen) if chosen else None
 
     def upsert(
         self,
@@ -276,6 +480,7 @@ class TranslationMemoryRepository:
         target_text: str,
         score: float = 1.0,
         note: Optional[str] = None,
+        channel_id: Optional[str] = None,
     ) -> TranslationMemoryDTO:
         if not source_text.strip() or not target_text.strip():
             raise ValueError("source_text and target_text must not be empty")
@@ -286,6 +491,11 @@ class TranslationMemoryRepository:
                 .where(TranslationMemoryEntry.source_lang == source_lang)
                 .where(TranslationMemoryEntry.target_lang == target_lang)
                 .where(TranslationMemoryEntry.source_hash == digest)
+                .where(
+                    TranslationMemoryEntry.channel_id == channel_id
+                    if channel_id is not None
+                    else TranslationMemoryEntry.channel_id.is_(None)
+                )
             )
             entity = session.execute(stmt).scalar_one_or_none()
             if entity is None:
@@ -297,6 +507,7 @@ class TranslationMemoryRepository:
                     source_hash=digest,
                     score=score,
                     note=note,
+                    channel_id=channel_id,
                 )
                 session.add(entity)
             else:
@@ -317,6 +528,7 @@ class TranslationMemoryRepository:
         target_text: Optional[str] = None,
         score: Optional[float] = None,
         note: Optional[str] = None,
+        channel_id=_UNSET,
     ) -> Optional[TranslationMemoryDTO]:
         with self._session_provider() as session:
             entity = session.get(TranslationMemoryEntry, entry_id)
@@ -328,6 +540,8 @@ class TranslationMemoryRepository:
                 entity.score = score
             if note is not None:
                 entity.note = note
+            if channel_id is not _UNSET:
+                entity.channel_id = channel_id
             session.flush()
             return TranslationMemoryDTO.from_orm(entity)
 
@@ -341,6 +555,8 @@ class TranslationMemoryRepository:
 
 
 __all__ = [
+    "ChannelDTO",
+    "ChannelRepository",
     "DuplicateEntryError",
     "GlossaryEntryDTO",
     "GlossaryRepository",
