@@ -134,31 +134,11 @@ def normalize_platforms(values: List[str]) -> List[str]:
     return seen
 
 
-@dataclass(frozen=True)
-class PublishingPackageDTO:
-    id: str
-    name: str
-    kind: str  # "video" or "audio"
-    language: str
-    channel_id: Optional[str]
-    title: str
-    description: Optional[str]
-    tags: List[str]
-    hashtags: List[str]
-    target_platforms: List[str]
-    media_path: Optional[str]
-    media_filename: Optional[str]
-    status: str
-    created_at: Optional[str]
-    updated_at: Optional[str]
-
-
 __all__ = [
     "PLATFORM_REGISTRY",
     "Platform",
     "PlatformDescriptor",
     "PublishStatus",
-    "PublishingPackageDTO",
     "get_platform",
     "list_platforms",
     "normalize_platforms",

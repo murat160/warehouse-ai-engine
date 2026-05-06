@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from ..publishing import PublishingService, build_zip_for_package
-from ..publishing.models import PublishStatus, list_platforms, normalize_platforms
+from ..publishing.models import list_platforms, normalize_platforms
 from ..storage.repositories import PublishingRepository
 from .schemas import (
     PublishingPackageCreateRequest,

@@ -13,7 +13,6 @@ from .models import (
     PLATFORM_REGISTRY,
     Platform,
     PlatformDescriptor,
-    PublishingPackageDTO,
 )
 from .service import PublishingService
 
@@ -21,7 +20,6 @@ __all__ = [
     "PLATFORM_REGISTRY",
     "Platform",
     "PlatformDescriptor",
-    "PublishingPackageDTO",
     "PublishingService",
     "build_zip_for_package",
 ]

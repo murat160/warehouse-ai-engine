@@ -352,6 +352,25 @@ STRINGS: Dict[str, Mapping[str, str]] = {
         "tr": "Henüz paket yok. Yukarıda ilkini oluşturun.",
         "en": "No packages yet. Create the first one above.",
     },
+    "publish_supported_platforms": {
+        "ru": "Поддерживаемые платформы",
+        "tk": "Goldanýan platformalar",
+        "tr": "Desteklenen platformlar",
+        "en": "Supported platforms",
+    },
+    "publish_name_placeholder": {
+        "ru": "Например: Видео для блога — выпуск 1",
+        "tk": "Mysal: Blog wideosy — sany 1",
+        "tr": "Örn: Blog videosu — bölüm 1",
+        "en": "e.g. Blog video — episode 1",
+    },
+    "publish_packages_count": {"ru": "{n} пакетов", "tk": "{n} paket", "tr": "{n} paket", "en": "{n} package(s)"},
+    "publish_mark_exported": {
+        "ru": "📦 Отметить как экспортированный",
+        "tk": "📦 Eksport edildi diýip belläň",
+        "tr": "📦 Dışa aktarıldı olarak işaretle",
+        "en": "📦 Mark as exported",
+    },
     "publish_auth_warning": {
         "ru": "Прямая публикация на YouTube/TikTok/Instagram/Facebook требует ваших собственных API-ключей "
               "(OAuth-приложение в Google Cloud / TikTok for Developers / Meta for Developers). "
@@ -370,6 +389,7 @@ STRINGS: Dict[str, Mapping[str, str]] = {
     # ----- common controls -----
     "any": {"ru": "Любой", "tk": "Islendik", "tr": "Tümü", "en": "Any"},
     "none_dash": {"ru": "—", "tk": "—", "tr": "—", "en": "—"},
+    "none_value": {"ru": "— нет —", "tk": "— ýok —", "tr": "— yok —", "en": "— none —"},
     "edit": {"ru": "Редактировать", "tk": "Üýtgetmek", "tr": "Düzenle", "en": "Edit"},
     "save": {"ru": "Сохранить", "tk": "Sakla", "tr": "Kaydet", "en": "Save"},
     "delete": {"ru": "Удалить", "tk": "Poz", "tr": "Sil", "en": "Delete"},
@@ -383,6 +403,262 @@ STRINGS: Dict[str, Mapping[str, str]] = {
     "language": {"ru": "Язык", "tk": "Dil", "tr": "Dil", "en": "Language"},
     "name": {"ru": "Имя", "tk": "Ady", "tr": "Ad", "en": "Name"},
     "description": {"ru": "Описание", "tk": "Düşündiriş", "tr": "Açıklama", "en": "Description"},
+    "note_optional": {"ru": "Примечание (необязательно)", "tk": "Bellik (hökman däl)", "tr": "Not (isteğe bağlı)", "en": "Note (optional)"},
+    "save_into_channel": {
+        "ru": "Сохранить только в активный канал",
+        "tk": "Diňe işjeň kanala saklaň",
+        "tr": "Yalnızca aktif kanala kaydet",
+        "en": "Save into the active channel only",
+    },
+    "status": {"ru": "Статус", "tk": "Ýagdaýy", "tr": "Durum", "en": "Status"},
+    "process_working": {"ru": "Обработка…", "tk": "Işlenýär…", "tr": "İşleniyor…", "en": "Working…"},
+    "process_done": {"ru": "Готово", "tk": "Taýýar", "tr": "Tamam", "en": "Done"},
+    "type_text_first": {
+        "ru": "Сначала введите текст.",
+        "tk": "Ilki tekst giriziň.",
+        "tr": "Önce metin girin.",
+        "en": "Type some text first.",
+    },
+    "src_tgt_must_differ": {
+        "ru": "Исходный и целевой языки должны отличаться.",
+        "tk": "Çeşme we maksat dilleri tapawutly bolmaly.",
+        "tr": "Kaynak ve hedef diller farklı olmalı.",
+        "en": "Source and target languages must differ.",
+    },
+    "both_required": {
+        "ru": "Оба поля обязательны.",
+        "tk": "Iki meýdan-da hökman gerek.",
+        "tr": "Her iki alan da gereklidir.",
+        "en": "Both fields are required.",
+    },
+    "saved": {"ru": "Сохранено.", "tk": "Saklandy.", "tr": "Kaydedildi.", "en": "Saved."},
+    "updated": {"ru": "Обновлено.", "tk": "Täzelendi.", "tr": "Güncellendi.", "en": "Updated."},
+
+    # ----- media tab (extra) -----
+    "media_url_placeholder": {
+        "ru": "https://www.youtube.com/watch?v=…",
+        "tk": "https://www.youtube.com/watch?v=…",
+        "tr": "https://www.youtube.com/watch?v=…",
+        "en": "https://www.youtube.com/watch?v=…",
+    },
+    "media_target_caption": {
+        "ru": "Выберите только язык, на который перевести. Исходный язык система определит сама.",
+        "tk": "Diňe terjime ediljek dili saýlaň. Çeşme dilini ulgam özi kesgitleýär.",
+        "tr": "Yalnızca çevrilecek hedef dili seçin. Kaynak dili sistem otomatik algılar.",
+        "en": "Choose only the target language. The source language is detected automatically.",
+    },
+    "media_voiceover_style": {
+        "ru": "Стиль озвучки",
+        "tk": "Sesli okamagyň stili",
+        "tr": "Seslendirme stili",
+        "en": "Voiceover style",
+    },
+    "media_url_or_file_required": {
+        "ru": "Добавьте ссылку или загрузите файл.",
+        "tk": "Salgy goşuň ýa-da fail ýükläň.",
+        "tr": "Bağlantı verin veya dosya yükleyin.",
+        "en": "Provide a URL or upload a file.",
+    },
+    "media_step_download": {"ru": "⬇️ Загрузка медиа…", "tk": "⬇️ Media göçürilýär…", "tr": "⬇️ Medya indiriliyor…", "en": "⬇️ Downloading media…"},
+    "media_step_extract": {"ru": "🎧 Извлечение аудио…", "tk": "🎧 Audio çykarylýar…", "tr": "🎧 Ses çıkarılıyor…", "en": "🎧 Extracting audio…"},
+    "media_step_transcribe": {"ru": "🗣️ Распознавание речи (Whisper)…", "tk": "🗣️ Sesi ykrar etmek (Whisper)…", "tr": "🗣️ Konuşma tanıma (Whisper)…", "en": "🗣️ Transcribing speech (Whisper)…"},
+    "media_step_detected": {"ru": "🌐 Определён язык", "tk": "🌐 Dil kesgitlenildi", "tr": "🌐 Dil algılandı", "en": "🌐 Detected language"},
+    "media_step_translate": {"ru": "🌐 Перевод…", "tk": "🌐 Terjime edilýär…", "tr": "🌐 Çeviriliyor…", "en": "🌐 Translating…"},
+    "media_step_voice": {"ru": "🔊 Озвучка…", "tk": "🔊 Sesli okalyşy…", "tr": "🔊 Seslendiriliyor…", "en": "🔊 Generating voice…"},
+    "media_transcript_heading": {"ru": "🗒️ Распознанный текст", "tk": "🗒️ Ykrar edilen tekst", "tr": "🗒️ Tanınan metin", "en": "🗒️ Transcript"},
+    "media_translation_heading": {"ru": "🌐 Перевод", "tk": "🌐 Terjime", "tr": "🌐 Çeviri", "en": "🌐 Translation"},
+    "media_voice_heading": {"ru": "🔊 Озвучка", "tk": "🔊 Sesli okalyş", "tr": "🔊 Seslendirme", "en": "🔊 Voiceover"},
+    "media_unknown_lang_warning": {
+        "ru": "Whisper не смог уверенно определить язык. Использую {fallback}.",
+        "tk": "Whisper dili anyk kesgitläp bilmedi. {fallback} ulanylýar.",
+        "tr": "Whisper dili kesin algılayamadı. {fallback} kullanılıyor.",
+        "en": "Whisper could not detect the language with confidence. Using {fallback}.",
+    },
+    "translate_failed": {"ru": "Ошибка: {error}", "tk": "Ýalňyşlyk: {error}", "tr": "Hata: {error}", "en": "Failed: {error}"},
+    "translate_synthesising": {"ru": "Синтез речи…", "tk": "Sesi sintezirlemek…", "tr": "Ses sentezleniyor…", "en": "Synthesising…"},
+    "translate_cloud_tts_warn": {
+        "ru": "Облачное TTS для ru/en/tr требует `OPENAI_API_KEY`. В этом Streamlit MVP "
+              "локально рендерится только туркменский голос.",
+        "tk": "ru/en/tr üçin bulut TTS `OPENAI_API_KEY` talap edýär. Bu Streamlit MVP-de "
+              "ýerli diňe türkmen sesi rendering edilýär.",
+        "tr": "ru/en/tr için bulut TTS `OPENAI_API_KEY` gerektirir. Bu Streamlit MVP'de "
+              "yalnızca Türkmence ses yerel olarak oluşturulur.",
+        "en": "Cloud TTS for ru/en/tr requires `OPENAI_API_KEY`. This Streamlit MVP only "
+              "renders Turkmen voice locally.",
+    },
+    "translate_tts_failed": {"ru": "Ошибка озвучки: {error}", "tk": "Sesli ýalňyşlygy: {error}", "tr": "Ses hatası: {error}", "en": "TTS failed: {error}"},
+    "translate_could_not_detect": {
+        "ru": "Не удалось определить язык — используется выбранный исходный.",
+        "tk": "Dili kesgitläp bolmady — saýlanan çeşme dili ulanylýar.",
+        "tr": "Dil algılanamadı — seçilen kaynak dil kullanılıyor.",
+        "en": "Could not auto-detect — using the selected source.",
+    },
+    "translate_translating": {"ru": "Перевод {src} → {tgt}…", "tk": "Terjime {src} → {tgt}…", "tr": "Çevriliyor {src} → {tgt}…", "en": "Translating {src} → {tgt}…"},
+    "translate_replace_caption": {
+        "ru": "Если перевод неверный — введите правильный вариант. Он сохранится в Translation "
+              "Memory активного канала (или глобально, если канал не выбран).",
+        "tk": "Terjime nädogry bolsa — dogry görnüşi giriziň. Ol işjeň kanalyň Translation "
+              "Memory-sinde (ýa-da kanal saýlanmasa, global ýadynda) saklanar.",
+        "tr": "Çeviri yanlışsa — doğru sürümü girin. Aktif kanalın Translation Memory'sine "
+              "(kanal seçilmediyse global belleğe) kaydedilir.",
+        "en": "If the translation is wrong — enter the correct version. It will be saved to "
+              "the active channel's Translation Memory (or globally if no channel is selected).",
+    },
+    "translate_correct_label": {"ru": "Правильный перевод", "tk": "Dogry terjime", "tr": "Doğru çeviri", "en": "Correct translation"},
+    "translate_save_correction": {"ru": "Сохранить исправление", "tk": "Düzedilen görnüşi sakla", "tr": "Düzeltmeyi kaydet", "en": "Save correction"},
+    "translate_saved_to_tm": {
+        "ru": "Сохранено в Translation Memory.",
+        "tk": "Translation Memory-de saklandy.",
+        "tr": "Translation Memory'e kaydedildi.",
+        "en": "Saved to Translation Memory.",
+    },
+    "translate_no_change": {
+        "ru": "Изменений нет — TM не обновлена.",
+        "tk": "Üýtgeşik zat ýok — TM täzelenmedi.",
+        "tr": "Değişiklik yok — TM güncellenmedi.",
+        "en": "Nothing changed — TM not updated.",
+    },
+    "translate_add_caption": {
+        "ru": "Добавьте точное соответствие — оно будет автоматически применяться после каждого "
+              "перевода в выбранной паре языков.",
+        "tk": "Anyk gabat gelýänini goşuň — saýlanan dil jübütinde her terjimeden soň awtomatiki "
+              "ulanylar.",
+        "tr": "Tam karşılığı ekleyin — seçilen dil çiftinde her çeviriden sonra otomatik uygulanır.",
+        "en": "Add an exact match — it will be applied after every translation in the chosen pair.",
+    },
+    "translate_save_rule": {"ru": "Сохранить правило", "tk": "Düzgüni sakla", "tr": "Kuralı kaydet", "en": "Save rule"},
+    "translate_rule_saved": {"ru": "Правило сохранено.", "tk": "Düzgün saklandy.", "tr": "Kural kaydedildi.", "en": "Rule saved."},
+
+    # ----- dictionary / memory (extra) -----
+    "dict_no_rules": {"ru": "Правил пока нет.", "tk": "Düzgünler entek ýok.", "tr": "Henüz kural yok.", "en": "No glossary rules."},
+    "dict_rules_count": {"ru": "{n} правил", "tk": "{n} sany düzgün", "tr": "{n} kural", "en": "{n} rule(s)"},
+    "dict_source_term": {"ru": "Слово / фраза", "tk": "Söz / söz düzümi", "tr": "Sözcük / ifade", "en": "Source word / phrase"},
+    "dict_target_term": {"ru": "Перевод", "tk": "Terjime", "tr": "Çeviri", "en": "Target word / phrase"},
+    "dict_whole_word": {"ru": "Целое слово", "tk": "Bütin söz", "tr": "Tam sözcük", "en": "Whole word"},
+    "dict_case_sensitive": {"ru": "С учётом регистра", "tk": "Harp ölçeginde", "tr": "Büyük/küçük harf", "en": "Case sensitive"},
+    "tm_no_entries": {"ru": "Память переводов пуста.", "tk": "Terjime ýady boş.", "tr": "Çeviri belleği boş.", "en": "Translation memory is empty."},
+    "tm_entries_count": {"ru": "{n} записей", "tk": "{n} ýazgy", "tr": "{n} kayıt", "en": "{n} entry(s)"},
+    "tm_add_phrase": {"ru": "➕ Добавить фразу", "tk": "➕ Söz düzümini goş", "tr": "➕ İfade ekle", "en": "➕ Add a phrase"},
+    "tm_source_phrase": {"ru": "Исходная фраза", "tk": "Çeşme söz düzümi", "tr": "Kaynak ifade", "en": "Source phrase"},
+    "tm_target_phrase": {"ru": "Перевод фразы", "tk": "Terjime", "tr": "Çeviri", "en": "Target phrase"},
+    "tm_save_phrase": {"ru": "Сохранить фразу", "tk": "Söz düzümini sakla", "tr": "İfadeyi kaydet", "en": "Save phrase"},
+
+    # ----- channels (extra) -----
+    "channels_no_channels": {
+        "ru": "Каналов пока нет — создайте первого AI-агента выше.",
+        "tk": "Kanallar entek ýok — ýokarda ilkinji AI-agentini dörediň.",
+        "tr": "Henüz kanal yok — yukarıda ilk AI ajanınızı oluşturun.",
+        "en": "No channels yet — create your first AI agent above.",
+    },
+    "channels_default_target": {
+        "ru": "Целевой язык по умолчанию",
+        "tk": "Düzgün boýunça maksat dili",
+        "tr": "Varsayılan hedef dil",
+        "en": "Default target language",
+    },
+    "channels_primary_lang": {"ru": "Основной язык", "tk": "Esasy dil", "tr": "Ana dil", "en": "Primary language"},
+    "channels_use_case": {"ru": "Сценарий использования", "tk": "Ulanyş ýagdaýy", "tr": "Kullanım türü", "en": "Use case"},
+    "channels_create_button": {"ru": "Создать канал", "tk": "Kanal döret", "tr": "Kanal oluştur", "en": "Create channel"},
+    "channels_dub_notes": {"ru": "Заметки по дубляжу (необязательно)", "tk": "Dubläž bellikleri (hökman däl)", "tr": "Dublaj notları (isteğe bağlı)", "en": "Dubbing notes (optional)"},
+    "channels_name_placeholder": {
+        "ru": "Например: Блог, Новости, Туркменская культура",
+        "tk": "Mysal: Blog, Habarlar, Türkmen medeniýeti",
+        "tr": "Örn: Blog, Haberler, Türkmen kültürü",
+        "en": "e.g. Blog, News, Turkmen culture",
+    },
+
+    # ----- voices catalog (extra) -----
+    "voices_filter_lang": {"ru": "Язык", "tk": "Dil", "tr": "Dil", "en": "Language"},
+    "voices_filter_use_case": {"ru": "Сценарий", "tk": "Ulanyşy", "tr": "Kullanım", "en": "Use case"},
+    "voices_filter_gender": {"ru": "Пол", "tk": "Jyns", "tr": "Cinsiyet", "en": "Gender"},
+    "voices_no_match": {
+        "ru": "Под фильтры ничего не подошло.",
+        "tk": "Süzgüçler boýunça hiç zat tapylmady.",
+        "tr": "Filtrelere uyan ses yok.",
+        "en": "No voices match these filters.",
+    },
+    "voices_catalog_caption": {
+        "ru": "Готовые голосовые профили: пол, возраст, тон, темп, питч, языки и сценарии. Назначайте профиль каналу на вкладке «Каналы».",
+        "tk": "Taýýar ses profilleri: jyns, ýaş, äheň, tizlik, äheň-uzynlygy, diller we ulanyşlar. Profil kanala «Kanallar» bölüminde belläň.",
+        "tr": "Hazır ses profilleri: cinsiyet, yaş, ton, hız, perde, diller ve kullanımlar. Profili «Kanallar» sekmesinden bir kanala atayın.",
+        "en": "Built-in voice profiles: gender, age, tone, speed, pitch, languages and use cases. Assign a profile to a channel on the Channels tab.",
+    },
+
+    # ----- custom voice (extra) -----
+    "cv_create_section": {"ru": "➕ Создать голос", "tk": "➕ Ses döret", "tr": "➕ Ses oluştur", "en": "➕ Create a custom voice"},
+    "cv_name_placeholder": {
+        "ru": "Например: Мой голос — обычный",
+        "tk": "Mysal: Meniň sesim — adaty",
+        "tr": "Örn: Sesim — normal",
+        "en": "e.g. My voice — natural",
+    },
+    "cv_speed": {"ru": "Скорость", "tk": "Tizlik", "tr": "Hız", "en": "Speed"},
+    "cv_pitch": {"ru": "Высота", "tk": "Beýiklik", "tr": "Perde", "en": "Pitch"},
+    "cv_emotion": {"ru": "Эмоция", "tk": "Duýgy", "tr": "Duygu", "en": "Emotion"},
+    "cv_clarity": {"ru": "Чистота", "tk": "Arassalygy", "tr": "Berraklık", "en": "Clarity"},
+    "cv_intensity": {"ru": "Сила", "tk": "Güýji", "tr": "Yoğunluk", "en": "Intensity"},
+    "cv_use_case": {"ru": "Тип использования", "tk": "Ulanyş görnüşi", "tr": "Kullanım türü", "en": "Use case"},
+    "cv_bind_channel": {"ru": "Привязать к каналу", "tk": "Kanala bagla", "tr": "Kanala bağla", "en": "Bind to channel"},
+    "cv_bind_style": {"ru": "Привязать к стилю", "tk": "Stile bagla", "tr": "Stile bağla", "en": "Bind to style"},
+    "cv_bind_video_use_case": {"ru": "Привязать к типу видео", "tk": "Wideo görnüşine bagla", "tr": "Video türüne bağla", "en": "Bind to video use case"},
+    "cv_variant_of": {"ru": "Вариант голоса (родитель)", "tk": "Sesiň görnüşi (ene)", "tr": "Ses varyantı (üst)", "en": "Variant of (parent voice)"},
+    "cv_standalone": {"ru": "— самостоятельный —", "tk": "— özbaşdak —", "tr": "— bağımsız —", "en": "— standalone —"},
+    "cv_audio_section": {
+        "ru": "**Аудио-семпл (необязательно)** — загрузите запись или пропустите.",
+        "tk": "**Ses-nusga (hökman däl)** — ýazgy ýükläň ýa-da geçiň.",
+        "tr": "**Ses örneği (isteğe bağlı)** — kayıt yükleyin veya atlayın.",
+        "en": "**Audio sample (optional)** — upload a recording or skip.",
+    },
+    "cv_upload_sample": {"ru": "Загрузить запись", "tk": "Ýazgyny ýükle", "tr": "Kayıt yükle", "en": "Upload sample"},
+    "cv_record_sample": {"ru": "…или записать с микрофона", "tk": "…ýa-da mikrofondan ýazgy alyň", "tr": "…veya mikrofonla kaydedin", "en": "…or record now (microphone)"},
+    "cv_consent_help": {
+        "ru": "Без подтверждения нельзя создать голосовой профиль. Не используйте чужой голос без разрешения.",
+        "tk": "Tassyklamasyz ses profilini döretmek mümkin däl. Başganyň sesini ygtyýarsyz ulanmaň.",
+        "tr": "Onay olmadan ses profili oluşturulamaz. Başkasının sesini izinsiz kullanmayın.",
+        "en": "Without consent you cannot create a voice profile. Do not use another person's voice without permission.",
+    },
+    "cv_consent_required_error": {
+        "ru": "Поставьте галочку согласия — без неё создание Custom Voice запрещено.",
+        "tk": "Razylyk gutusyny belläň — onsuz Custom Voice döretmek gadagan.",
+        "tr": "Onay kutusunu işaretleyin — onsuz Custom Voice oluşturulamaz.",
+        "en": "Tick the consent checkbox — Custom Voice creation requires it.",
+    },
+    "cv_create_button": {"ru": "Создать голос", "tk": "Ses döret", "tr": "Ses oluştur", "en": "Create voice"},
+    "cv_no_voices": {
+        "ru": "Здесь появятся ваши голоса после создания.",
+        "tk": "Döredilen sesler şu ýerde peýda bolar.",
+        "tr": "Sesler oluşturulduğunda burada görünür.",
+        "en": "Custom voices will appear here once you create one.",
+    },
+    "cv_voices_count": {"ru": "{n} голосов", "tk": "{n} ses", "tr": "{n} ses", "en": "{n} voice(s)"},
+    "cv_search_placeholder": {"ru": "🔍 Поиск по имени", "tk": "🔍 Adyna görä gözleg", "tr": "🔍 Ada göre ara", "en": "🔍 Find by name"},
+    "cv_preview_button": {"ru": "🔊 Прослушать пример", "tk": "🔊 Mysaly diňle", "tr": "🔊 Örneği dinle", "en": "🔊 Preview"},
+    "cv_preview_caption_tk": {
+        "ru": "Превью сделано офлайн через MMS-TTS — настоящее voice cloning требует провайдер XTTS / ElevenLabs (не настроен).",
+        "tk": "Mysal MMS-TTS arkaly offline döredildi — hakyky voice cloning üçin XTTS / ElevenLabs gerek (sazlanmadyk).",
+        "tr": "Önizleme MMS-TTS ile çevrimdışı oluşturuldu — gerçek ses klonlama için XTTS / ElevenLabs gerekir (yapılandırılmamış).",
+        "en": "Preview was rendered offline via MMS-TTS — true voice cloning requires an XTTS / ElevenLabs provider (not configured).",
+    },
+    "cv_preview_warn_other_lang": {
+        "ru": "Превью для ru/tr/en в MVP требует настроенного облачного TTS (OPENAI_API_KEY). "
+              "Используйте FastAPI-маршрут `/v1/custom-voices/{id}/preview` для рендеринга.",
+        "tk": "MVP-de ru/tr/en üçin mysal sazlanan bulut TTS (OPENAI_API_KEY) talap edýär. "
+              "Rendering üçin FastAPI marşruty `/v1/custom-voices/{id}/preview` ulanyň.",
+        "tr": "MVP'de ru/tr/en için önizleme yapılandırılmış bulut TTS (OPENAI_API_KEY) gerektirir. "
+              "Render için FastAPI rotası `/v1/custom-voices/{id}/preview` kullanın.",
+        "en": "Preview for ru/tr/en in this MVP needs a configured cloud TTS (OPENAI_API_KEY). "
+              "Use the FastAPI route `/v1/custom-voices/{id}/preview` to render previews.",
+    },
+    "cv_variant_button": {"ru": "➕ Вариант", "tk": "➕ Görnüş", "tr": "➕ Varyant", "en": "➕ Variant"},
+    "cv_variant_toast": {
+        "ru": "Родительский голос задан — открой форму выше, чтобы добавить вариант.",
+        "tk": "Ene ses bellendi — görnüş goşmak üçin ýokardaky görnüşi açyň.",
+        "tr": "Üst ses ayarlandı — varyant eklemek için yukarıdaki formu açın.",
+        "en": "Parent voice set — open the create form to add a variant.",
+    },
+    "cv_no_sample": {"ru": "📁 Нет аудио-семпла", "tk": "📁 Ses-nusgasy ýok", "tr": "📁 Ses örneği yok", "en": "📁 no audio sample uploaded"},
+    "cv_sample_missing": {"ru": "📁 Файл семпла не найден на диске", "tk": "📁 Nusga faýly diskde tapylmady", "tr": "📁 Örnek dosyası diskte yok", "en": "📁 sample file missing on disk"},
+    "cv_consent_confirmed_at": {"ru": "✅ Согласие подтверждено: {ts}", "tk": "✅ Razylyk tassyklandy: {ts}", "tr": "✅ Onay verildi: {ts}", "en": "✅ consent confirmed at {ts}"},
 }
 
 
