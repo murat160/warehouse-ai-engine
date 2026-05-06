@@ -1,113 +1,91 @@
 # Deploy guide
 
-`warehouse-ai-engine` — это обычное Python/Streamlit-приложение. Ниже два
-готовых бесплатных пути в интернет. Авторизация делается **только тобой**:
-у меня нет доступа к твоим аккаунтам, поэтому самой кнопки «Deploy» я
-нажать не могу. Зато всё в репозитории уже подготовлено к 1-click деплою.
+`warehouse-ai-engine` is built around **self-hosted deployment** on your own
+VPS / server with your own domain. That's the supported, primary path. The
+managed alternatives (Hugging Face Spaces, Streamlit Cloud) are documented
+at the bottom for quick demos only — they reset their containers and are
+not suitable for production.
 
 ---
 
-## Hugging Face Spaces (рекомендуется)
+## Primary: self-hosted on your VPS
 
-**Почему**: до 16 GB RAM на free, нет таймаута на холодный старт NLLB-200,
-системный `ffmpeg` доступен из коробки.
+End result: `https://ai.your-domain.com` → host nginx → Streamlit container
+→ Postgres container.
 
-1. Открой https://huggingface.co/spaces и нажми **Create new Space**.
-2. Заполни:
-   - Owner — твой логин.
-   - Space name — например `warehouse-ai-translator`.
-   - License — `apache-2.0`.
-   - **SDK — `Streamlit`**.
-   - Hardware — `CPU basic` (или больше, если есть кредиты).
-   - Visibility — `Public` или `Private`.
-3. Подключи репозиторий: вкладка **Files → Add → Upload files** или клонируй
-   Space локально и скопируй содержимое:
-   ```bash
-   git clone https://huggingface.co/spaces/<your-username>/warehouse-ai-translator
-   cp -r warehouse-ai-engine/* warehouse-ai-translator/
-   cd warehouse-ai-translator
-   git add .
-   git commit -m "deploy: warehouse-ai-engine"
-   git push
-   ```
-4. Открой вкладку **App** — Spaces сами подхватят `requirements.txt`,
-   `packages.txt` и точку входа `app.py`. Первый запуск долгий
-   (загрузка NLLB-200 ~1.2 ГБ + Whisper-small ~244 МБ), последующие —
-   мгновенные.
-5. Финальная ссылка будет такой:
-   `https://<your-username>-warehouse-ai-translator.hf.space`.
+* Pre-built Docker stack (`Dockerfile`, `docker-compose.yml`).
+* Postgres 16 wired through `DATABASE_URL`.
+* Persistent volumes for user data and model weights.
+* nginx + Let's Encrypt SSL with WebSocket support and large-file uploads.
 
-### Переменные окружения (если нужны OpenAI / Postgres)
-
-В Settings → **Variables and secrets** добавь:
-
-| Имя              | Назначение                                        |
-|------------------|---------------------------------------------------|
-| `OPENAI_API_KEY` | (не обязательно) если хочешь использовать FastAPI-маршрут с OpenAI. |
-| `DATABASE_URL`   | (не обязательно) `postgresql+psycopg://…` чтобы хранить словарь и TM в Postgres. |
-
-> ⚠️ **Важно**: Hugging Face Spaces сбрасывает локальные файлы при
-> рестарте. Чтобы пользовательский словарь и Translation Memory не
-> теряли данные, обязательно укажи `DATABASE_URL` на внешний Postgres
-> (Supabase / Neon / Railway — у всех есть бесплатные планы).
-
----
-
-## Streamlit Community Cloud
-
-**Почему**: проще всего связать с GitHub. Ограничение — ~1 GB RAM на free,
-NLLB-200 + Whisper могут не уместиться, лучше выбирать Whisper-tiny.
-
-1. https://share.streamlit.io → **Sign in with GitHub**.
-2. Кнопка **New app**:
-   - Repository — `murat160/warehouse-ai-engine`.
-   - Branch — `main` (после слияния PR) **или** `issue-2-ai-architecture`.
-   - Main file path — `app.py`.
-3. Advanced settings → Python version `3.11`.
-4. Если нужны секреты, добавь их в **Secrets** (TOML-формат):
-   ```toml
-   OPENAI_API_KEY = "sk-..."
-   DATABASE_URL = "postgresql+psycopg://..."
-   ```
-5. **Deploy**. Через 5–10 минут получишь URL вида
-   `https://<your-username>-warehouse-ai-engine-app-XXXX.streamlit.app/`.
-
-> Streamlit Cloud также сбрасывает контейнер. Для долговременного
-> хранения словаря и TM укажи `DATABASE_URL`.
-
----
-
-## Self-hosted Docker
-
-Минимальный `Dockerfile` (можно использовать на Render, Railway, fly.io,
-Hetzner, любом VPS):
-
-```dockerfile
-FROM python:3.11-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
- && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . ./
-EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-```
-
-Запуск:
+**Pointer:** the full step-by-step Ubuntu guide lives in
+[`self-hosted-deploy.md`](self-hosted-deploy.md). Short version:
 
 ```bash
-docker build -t warehouse-ai-translator .
-docker run -p 8501:8501 -v $(pwd)/data:/app/data warehouse-ai-translator
+# on your VPS
+cd /opt
+sudo git clone https://github.com/murat160/warehouse-ai-engine.git
+sudo chown -R $USER:$USER warehouse-ai-engine
+cd warehouse-ai-engine
+git checkout issue-2-ai-architecture
+
+cp .env.production.example .env.production
+chmod 600 .env.production
+nano .env.production                       # set POSTGRES_PASSWORD, etc.
+
+docker compose up -d --build
+
+sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
+sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
+         /etc/nginx/sites-available/translator.conf
+sudo ln -s /etc/nginx/sites-available/translator.conf /etc/nginx/sites-enabled/
+sudo systemctl reload nginx
+
+sudo certbot --nginx -d ai.your-domain.com --redirect \
+             --agree-tos -m you@your-domain.com -n
 ```
+
+Open `https://ai.your-domain.com` — you should see the Streamlit UI.
 
 ---
 
-## После деплоя — финальный шаг
+## Optional: Hugging Face Spaces (quick demo only)
 
-1. Открой URL, проверь все три вкладки (`Translate`, `Audio / Video / URL`,
-   `My Dictionary`).
-2. Создай PR `issue-2-ai-architecture` → `main`:
-   https://github.com/murat160/warehouse-ai-engine/compare/main...issue-2-ai-architecture
-3. Добавь публичную ссылку в описание PR — это и будет «финальная рабочая
-   интернет-ссылка» из требований задачи.
+Useful for a 5-minute share link. **Not** recommended for production:
+Spaces wipe the container on every restart, so user-uploaded glossary,
+Translation Memory, channels and Custom Voices vanish unless you point
+`DATABASE_URL` at an external Postgres.
+
+1. https://huggingface.co/spaces → **Create new Space**.
+2. SDK = **Streamlit**, hardware = `CPU basic` (16 GB RAM).
+3. Connect `murat160/warehouse-ai-engine`, branch `issue-2-ai-architecture`.
+4. Add secrets in Settings → Variables: `OPENAI_API_KEY` (optional),
+   `DATABASE_URL` (highly recommended — Supabase / Neon / Railway).
+5. Final URL: `https://<your-username>-<space-name>.hf.space`.
+
+---
+
+## Optional: Streamlit Community Cloud (quick demo only)
+
+Same caveat as Hugging Face: containers reset, RAM cap is ~1 GB which is
+tight for NLLB-200 + Whisper-small.
+
+1. https://share.streamlit.io → **New app**.
+2. Repo = `murat160/warehouse-ai-engine`, branch = `issue-2-ai-architecture`,
+   main file = `app.py`.
+3. Secrets (TOML): `OPENAI_API_KEY`, `DATABASE_URL`.
+4. Final URL: `https://<your-username>-warehouse-ai-engine-app-XXXX.streamlit.app/`.
+
+---
+
+## Why self-hosting is the recommended path
+
+| Concern                       | Self-hosted VPS                        | HF Spaces / Streamlit Cloud |
+|-------------------------------|----------------------------------------|------------------------------|
+| Your own domain               | ✅ via host nginx + Certbot            | ❌ subdomain on theirs       |
+| User data persists across restarts | ✅ Docker volumes + Postgres      | ❌ unless external Postgres  |
+| Custom-voice audio samples kept | ✅ `./data/custom_voices/`           | ❌ wiped on rebuild          |
+| Publishing inbox media        | ✅ `./data/publishing_inbox/`         | ❌ wiped on rebuild          |
+| TLS                           | ✅ Let's Encrypt via Certbot          | ✅ managed                  |
+| Resource limits               | only your VPS                          | platform-imposed             |
+| Privacy of API keys           | only your VPS env                      | platform secrets store       |

@@ -1,0 +1,35 @@
+# Don't ship local data, secrets or caches into the image.
+.git
+.github
+.gitignore
+.dockerignore
+
+# Local Python artefacts
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files (real secrets must NEVER reach the image)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local user data — these volumes mount at runtime instead
+data/
+out/
+tmp/
+hf_cache/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Tests / docs are kept (small, useful for in-image debugging)

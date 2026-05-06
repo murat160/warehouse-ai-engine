@@ -185,18 +185,64 @@ streamlit run app.py
 > на минуту видео. Миллисекундные задержки достижимы только на GPU и со
 > стримингом.
 
-## Деплой в интернет
+## Production deployment on own VPS
 
-Подробная пошаговая инструкция: [`docs/deploy.md`](docs/deploy.md).
-Поддерживаются два бесплатных варианта:
+**Основной путь деплоя** — собственный VPS с твоим доменом и твоей базой
+PostgreSQL. Полная инструкция:
+[`docs/self-hosted-deploy.md`](docs/self-hosted-deploy.md).
 
-1. **Hugging Face Spaces** (рекомендуется — больше RAM, нет таймаута на
-   первый запуск NLLB) — `docs/deploy.md#hugging-face-spaces`.
-2. **Streamlit Community Cloud** — `docs/deploy.md#streamlit-community-cloud`.
+В репозитории уже есть всё необходимое:
 
-После деплоя у тебя появится публичный URL вида
-`https://<имя>-warehouse-ai-engine.hf.space` или
-`https://<имя>-warehouse-ai-engine.streamlit.app`.
+| Файл                                | Назначение                                    |
+|-------------------------------------|-----------------------------------------------|
+| `Dockerfile`                        | Production-образ Streamlit (CPU-only torch)   |
+| `docker-compose.yml`                | App + Postgres + persistent volumes           |
+| `.env.production.example`           | Шаблон секретов (реальный `.env.production` не коммитится) |
+| `deploy/nginx/translator.conf`      | nginx site config + WebSocket + SSL            |
+| `docs/self-hosted-deploy.md`        | Пошаговая инструкция (Ubuntu)                  |
+
+Короткая версия (на свежем Ubuntu 22.04 / 24.04):
+
+```bash
+cd /opt
+sudo git clone https://github.com/murat160/warehouse-ai-engine.git
+sudo chown -R $USER:$USER warehouse-ai-engine
+cd warehouse-ai-engine
+git checkout issue-2-ai-architecture
+
+cp .env.production.example .env.production
+chmod 600 .env.production
+nano .env.production              # задать POSTGRES_PASSWORD и т.д.
+
+docker compose up -d --build      # стартует app + Postgres
+
+sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
+sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
+         /etc/nginx/sites-available/translator.conf
+sudo ln -s /etc/nginx/sites-available/translator.conf \
+           /etc/nginx/sites-enabled/translator.conf
+sudo systemctl reload nginx
+
+sudo certbot --nginx -d ai.your-domain.com --redirect \
+             --agree-tos -m you@your-domain.com -n
+```
+
+После этого `https://ai.your-domain.com` показывает Streamlit-приложение.
+
+Все пользовательские данные хранятся **на твоей машине**, не в GitHub:
+
+* `./data/` — пользовательский словарь, Custom Voice семплы, publishing
+  inbox, ffmpeg-артефакты.
+* docker-volume `postgres_data` — Postgres-таблицы (каналы, TM, glossary,
+  Custom Voices, publishing packages).
+* docker-volume `hf_cache` — веса NLLB-200 / Whisper / MMS-TTS.
+
+### Альтернативные варианты (для быстрых демо)
+
+Hugging Face Spaces / Streamlit Community Cloud — только для
+демонстраций: эти сервисы сбрасывают контейнер при перезапуске и не
+подходят для production. Подробности и оговорки — в
+[`docs/deploy.md`](docs/deploy.md).
 
 ## Запуск FastAPI-архитектуры
 

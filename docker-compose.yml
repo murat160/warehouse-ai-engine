@@ -1,0 +1,61 @@
+# Self-hosted production stack for warehouse-ai-engine.
+#
+# Usage on a fresh Ubuntu VPS:
+#   1) cp .env.production.example .env.production  &&  edit it
+#   2) docker compose up -d --build
+#   3) configure the host nginx (see deploy/nginx/translator.conf) and
+#      Certbot (see docs/self-hosted-deploy.md).
+#
+# The Streamlit app binds to 127.0.0.1:8501 — only the nginx reverse proxy
+# on the host is supposed to talk to it. Postgres stays on the internal
+# docker network and is never exposed publicly.
+
+services:
+  app:
+    build: .
+    image: warehouse-ai-engine:latest
+    container_name: warehouse-ai-app
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+    ports:
+      # Bind only to localhost — TLS termination is handled by host nginx.
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./data:/app/data                # user glossary, TM, custom-voice samples,
+                                        # publishing inbox, ffmpeg artefacts
+      - hf_cache:/app/hf_cache          # NLLB-200, Whisper, MMS-TTS weights
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8501/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  db:
+    image: postgres:16-alpine
+    container_name: warehouse-ai-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Postgres is reachable only via the internal Docker network.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  hf_cache:
