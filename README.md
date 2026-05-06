@@ -25,27 +25,60 @@ AI-движок перевода, распознавания и озвучки �
 ## Возможности
 
 - Перевод текста между всеми парами `ru ↔ tk ↔ tr ↔ en` (12 направлений).
-- Глоссарий и проверка качества для чистого литературного русского и
-  чистого туркменского с правильными диакритиками (ä, ý, ň, ö, ü, ç, ş).
+- Встроенный курируемый глоссарий + **пользовательский словарь** (CRUD
+  через UI и API) с приоритетом выше AI-перевода.
+- **Translation Memory** — сохранение целых фраз; при повторном запросе
+  система отдаёт точный сохранённый вариант, минуя модель.
+- 8 режимов стиля/эмоции: нейтральный, уважительный, тёплый, официальный,
+  дружеский, эмоциональный, литературный, простой разговорный.
 - Распознавание речи (STT) из аудио/видео.
 - Озвучка переведённого текста (TTS) с маршрутизацией по языкам:
   туркменский — через локальный **Meta MMS-TTS**
   (`facebook/mms-tts-tuk-script_latin`), остальные — через основного
   провайдера.
 - Заготовка пайплайна дубляжа видео: `extract → STT → translate → TTS → mux`.
+
+## Как «учится» переводчик
+
+Каждый перевод проходит цепочку:
+
+```
+input → [Translation Memory exact match? ──► return curated text]
+      └► provider (NLLB-200 / OpenAI) с подсказкой стиля
+      └► curated glossary (ru↔tk built-in)
+      └► user glossary  ← правила, добавленные пользователем
+      └► quality check
+```
+
+- **Замена прямо после перевода** — кнопка «✏️ Replace translation»
+  сохраняет правильный вариант в Translation Memory; следующий такой же
+  запрос вернёт сохранённый текст без обращения к модели.
+- **Добавить в словарь** — кнопка «📚 Add to dictionary» создаёт правило
+  замены, которое автоматически применяется ко всем будущим переводам в
+  этой языковой паре.
+- **Поиск** в разделе «My Dictionary» — мгновенный фильтр по исходнику
+  и переводу.
+- **Хранилище** — локальный SQLite (`data/warehouse_ai.db`). Чтобы
+  переключиться на PostgreSQL, задайте `DATABASE_URL=postgresql+psycopg://…`
+  — код менять не нужно.
 - HTTP API на FastAPI: `/v1/translate`, `/v1/stt`, `/v1/tts`, `/health`.
 
 ## Структура
 
 ```
 src/
-  translator/    # перевод текста + глоссарий + проверка качества
+  translator/    # перевод текста + статический и пользовательский глоссарий
+                 # + Translation Memory + стили/эмоции + проверка качества
   speech/        # STT и TTS фасады
   video/         # ffmpeg-обвязка, субтитры, дубляж
   providers/     # базовые интерфейсы и реализации (OpenAI, MMS-TTS)
+  storage/       # SQLAlchemy: glossary + TM (SQLite по умолчанию, ready for PG)
   api/           # FastAPI приложение и pydantic-схемы
+  cloud/         # cloud MVP: NLLB-200 + Whisper + MMS-TTS
+  ui/            # тема и общие UI-элементы для Streamlit
+app.py           # точка входа Streamlit
 docs/translator-architecture.md
-tests/           # юнит- и API-тесты с фейковыми провайдерами
+tests/           # юнит-, интеграционные и API-тесты на фейковых провайдерах
 .env.example
 requirements.txt
 ```
@@ -86,6 +119,7 @@ pip install transformers torch scipy
 | `TRANSLATOR_USE_GLOSSARY`   | Применять ru↔tk глоссарий после перевода.              |
 | `TRANSLATOR_QUALITY_CHECK`  | Запускать эвристическую проверку качества.             |
 | `TRANSLATOR_LATENCY_BUDGET` | Мягкий бюджет латентности на запрос (сек).             |
+| `DATABASE_URL`              | URL базы для словаря и TM. По умолчанию SQLite.        |
 
 ## Запуск Streamlit Cloud MVP (`app.py`)
 
@@ -94,25 +128,19 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-После запуска откройте `http://localhost:8501`. Доступно две вкладки:
+После запуска откройте `http://localhost:8501`. Доступны три вкладки:
 
-- **Text** — ручной ввод текста, выбор source/target из ru/tk/tr/en,
-  опциональный авто-detect (только для ru/en/tr), для target=tk
-  включается озвучка через MMS-TTS с выбором эмоции (neutral / happy /
-  sad / angry — реализованы как стилевые префиксы, не настоящий
-  prosody-control).
-- **Audio / Video / URL** — вставьте ссылку (YouTube, TikTok и любой
-  поддерживаемый `yt-dlp` источник) **или** загрузите файл (mp4 / mkv /
-  mov / webm / wav / mp3 / m4a / ogg). Пайплайн:
-  `download → ffmpeg extract WAV → whisper ASR → NLLB перевод → (для tk) MMS-TTS озвучка`.
-
-Деплой на **Streamlit Community Cloud**:
-
-1. Подключите репозиторий, выберите файл `app.py`.
-2. `requirements.txt` подхватится автоматически.
-3. `packages.txt` ставит системный `ffmpeg`.
-4. `.streamlit/config.toml` задаёт тёмную тему и максимальный размер
-   загружаемого файла (500 МБ).
+- **✨ Translate** — ручной ввод текста, выбор source/target из
+  ru/tk/tr/en, выбор стиля/эмоции (8 режимов), опциональный авто-detect
+  (только для ru/en/tr), кнопки «Voice (Turkmen)», «Replace translation»
+  (сохранить исправление в Translation Memory) и «Add to dictionary»
+  (создать пользовательское правило).
+- **🎬 Audio / Video / URL** — вставьте ссылку (YouTube, TikTok и любой
+  поддерживаемый `yt-dlp` источник) **или** загрузите файл. Пайплайн:
+  `download → ffmpeg → Whisper ASR → NLLB-200 перевод → (для tk) MMS-TTS озвучка`.
+- **📚 My Dictionary** — пользовательский словарь (CRUD) и Translation
+  Memory с поиском по исходнику и переводу. Все правки сохраняются в
+  локальной SQLite-базе и используются автоматически при следующем переводе.
 
 > ⚠️ **Реалистичные задержки** (без GPU, на free CPU):
 > текстовый перевод короткой фразы — ~0.3–1 с,
@@ -121,6 +149,19 @@ streamlit run app.py
 > полный пайплайн «видео → озвучка на туркменском» — ~30–90 с
 > на минуту видео. Миллисекундные задержки достижимы только на GPU и со
 > стримингом.
+
+## Деплой в интернет
+
+Подробная пошаговая инструкция: [`docs/deploy.md`](docs/deploy.md).
+Поддерживаются два бесплатных варианта:
+
+1. **Hugging Face Spaces** (рекомендуется — больше RAM, нет таймаута на
+   первый запуск NLLB) — `docs/deploy.md#hugging-face-spaces`.
+2. **Streamlit Community Cloud** — `docs/deploy.md#streamlit-community-cloud`.
+
+После деплоя у тебя появится публичный URL вида
+`https://<имя>-warehouse-ai-engine.hf.space` или
+`https://<имя>-warehouse-ai-engine.streamlit.app`.
 
 ## Запуск FastAPI-архитектуры
 

@@ -44,11 +44,13 @@ class TranslationProvider(ABC):
         source_lang: str,
         target_lang: str,
         literary: bool = False,
+        style: Optional[str] = None,
     ) -> str:
         """Translate ``text`` from ``source_lang`` to ``target_lang``.
 
-        ``literary`` is a hint asking the provider to prefer a clean,
-        literary register — used for the priority ru<->tk pair.
+        ``literary`` is a legacy boolean hint kept for back-compat — prefer
+        ``style="literary"`` (or any other :class:`TranslationStyle` value).
+        ``style`` selects the register/emotion the provider should aim for.
         """
 
 

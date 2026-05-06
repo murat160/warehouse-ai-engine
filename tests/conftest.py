@@ -45,6 +45,7 @@ class FakeTranslationProvider(TranslationProvider):
         source_lang: str,
         target_lang: str,
         literary: bool = False,
+        style: Optional[str] = None,
     ) -> str:
         if not self._available:
             raise ProviderUnavailableError("fake provider disabled")
@@ -122,3 +123,29 @@ def fake_stt() -> FakeSTTProvider:
 @pytest.fixture
 def fake_tts() -> FakeTTSProvider:
     return FakeTTSProvider()
+
+
+@pytest.fixture
+def isolated_db(tmp_path):
+    """Initialise a fresh SQLite database file for each test that needs one."""
+    from src.storage import db as storage_db
+
+    storage_db.reset_for_tests()
+    db_file = tmp_path / "test.db"
+    storage_db.init_db(f"sqlite:///{db_file.as_posix()}")
+    yield db_file
+    storage_db.reset_for_tests()
+
+
+@pytest.fixture
+def glossary_repo(isolated_db):
+    from src.storage.repositories import GlossaryRepository
+
+    return GlossaryRepository()
+
+
+@pytest.fixture
+def tm_repo(isolated_db):
+    from src.storage.repositories import TranslationMemoryRepository
+
+    return TranslationMemoryRepository()

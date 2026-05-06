@@ -39,3 +39,7 @@ tmp/
 # Models cache
 .cache/
 hf_cache/
+
+# Local storage (user glossary + TM SQLite db)
+data/
+out/

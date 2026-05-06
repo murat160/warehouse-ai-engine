@@ -40,7 +40,14 @@ def _client(settings: Settings):
     return OpenAI(api_key=settings.openai_api_key)
 
 
-def _system_prompt(source_lang: str, target_lang: str, literary: bool) -> str:
+def _system_prompt(
+    source_lang: str,
+    target_lang: str,
+    literary: bool,
+    style: Optional[str] = None,
+) -> str:
+    from ..translator.styles import build_prompt_hint, get_style
+
     src = LANGUAGES[source_lang]
     tgt = LANGUAGES[target_lang]
     base = (
@@ -49,21 +56,18 @@ def _system_prompt(source_lang: str, target_lang: str, literary: bool) -> str:
         "Output ONLY the translation, with no commentary, no quotes, no "
         "language labels, and no explanation."
     )
-    if literary or {source_lang, target_lang} == {"ru", "tk"}:
-        base += (
-            " Use a clean literary register. Preserve names, numbers and "
-            "punctuation. Avoid awkward calques and word-by-word renderings."
-        )
-        if target_lang == "tk":
-            base += (
-                " Write idiomatic, fluent Turkmen with proper diacritics "
-                "(ä, ý, ň, ö, ü, ç, ş). Do not leave Russian words untranslated."
-            )
-        if target_lang == "ru":
-            base += (
-                " Write fluent, natural literary Russian. Do not transliterate "
-                "Turkmen words — translate their meaning."
-            )
+
+    # Resolve the style profile: explicit style wins, otherwise legacy
+    # ``literary`` flag and the priority ru<->tk pair upgrade us to literary.
+    if style:
+        profile = get_style(style)
+    elif literary or {source_lang, target_lang} == {"ru", "tk"}:
+        profile = get_style("literary")
+    else:
+        profile = get_style("neutral")
+
+    base += " " + build_prompt_hint(profile, target_lang)
+    base += " Preserve names, numbers and punctuation."
     return base
 
 
@@ -94,6 +98,7 @@ class OpenAIProvider(TranslationProvider, STTProvider, TTSProvider):
         source_lang: str,
         target_lang: str,
         literary: bool = False,
+        style: Optional[str] = None,
     ) -> str:
         if not text.strip():
             return ""
@@ -103,7 +108,10 @@ class OpenAIProvider(TranslationProvider, STTProvider, TTSProvider):
                 model=self.settings.openai_translation_model,
                 temperature=0.2,
                 messages=[
-                    {"role": "system", "content": _system_prompt(source_lang, target_lang, literary)},
+                    {
+                        "role": "system",
+                        "content": _system_prompt(source_lang, target_lang, literary, style),
+                    },
                     {"role": "user", "content": text},
                 ],
             )
