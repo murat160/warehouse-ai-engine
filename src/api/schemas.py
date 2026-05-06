@@ -314,3 +314,59 @@ class CustomVoiceUpdateRequest(BaseModel):
 class CustomVoicePreviewRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=600)
     emotion: Optional[str] = None  # overrides profile emotion if set
+
+
+# ---------------------------------------------------------------------------
+# Publishing
+# ---------------------------------------------------------------------------
+
+
+class PublishingPlatformSchema(BaseModel):
+    code: str
+    label: str
+    upload_url: str
+    icon: str
+    notes: str
+
+
+class PublishingPackageSchema(BaseModel):
+    id: str
+    name: str
+    kind: str = "video"
+    language: str = "ru"
+    channel_id: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    hashtags: List[str] = Field(default_factory=list)
+    target_platforms: List[str] = Field(default_factory=list)
+    media_path: Optional[str] = None
+    media_filename: Optional[str] = None
+    status: str = "draft"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class PublishingPackageCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    title: str = Field(..., min_length=1, max_length=300)
+    kind: str = "video"
+    language: str = "ru"
+    channel_id: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=20_000)
+    tags: List[str] = Field(default_factory=list)
+    hashtags: List[str] = Field(default_factory=list)
+    target_platforms: List[str] = Field(default_factory=list)
+
+
+class PublishingPackageUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    title: Optional[str] = None
+    kind: Optional[str] = None
+    language: Optional[str] = None
+    channel_id: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    hashtags: Optional[List[str]] = None
+    target_platforms: Optional[List[str]] = None
+    status: Optional[str] = None

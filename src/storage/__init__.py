@@ -9,12 +9,14 @@ from .models import (
     Channel,
     CustomVoiceProfile,
     GlossaryEntry,
+    PublishingPackage,
     TranslationMemoryEntry,
 )
 from .repositories import (
     ChannelRepository,
     CustomVoiceRepository,
     GlossaryRepository,
+    PublishingRepository,
     TranslationMemoryRepository,
 )
 
@@ -26,6 +28,8 @@ __all__ = [
     "CustomVoiceRepository",
     "GlossaryEntry",
     "GlossaryRepository",
+    "PublishingPackage",
+    "PublishingRepository",
     "TranslationMemoryEntry",
     "TranslationMemoryRepository",
     "init_db",

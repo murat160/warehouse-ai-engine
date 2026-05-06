@@ -14,6 +14,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import json
 from datetime import datetime, timezone
 
 from .db import session_scope
@@ -21,6 +22,7 @@ from .models import (
     Channel,
     CustomVoiceProfile,
     GlossaryEntry,
+    PublishingPackage,
     TranslationMemoryEntry,
     hash_for_match,
     normalize_for_match,
@@ -788,6 +790,209 @@ DEFAULT_CONSENT_TEXT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Publishing packages
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PublishingPackageDTO:
+    id: str
+    name: str
+    kind: str
+    language: str
+    channel_id: Optional[str]
+    title: str
+    description: Optional[str]
+    tags: List[str]
+    hashtags: List[str]
+    target_platforms: List[str]
+    media_path: Optional[str]
+    media_filename: Optional[str]
+    status: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+    @classmethod
+    def from_orm(cls, e: PublishingPackage) -> "PublishingPackageDTO":
+        return cls(
+            id=e.id,
+            name=e.name,
+            kind=e.kind,
+            language=e.language,
+            channel_id=e.channel_id,
+            title=e.title,
+            description=e.description,
+            tags=_loads_list(e.tags_json),
+            hashtags=_loads_list(e.hashtags_json),
+            target_platforms=_loads_list(e.target_platforms_json),
+            media_path=e.media_path,
+            media_filename=e.media_filename,
+            status=e.status,
+            created_at=e.created_at.isoformat() if e.created_at else None,
+            updated_at=e.updated_at.isoformat() if e.updated_at else None,
+        )
+
+
+def _loads_list(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _dumps_list(items: Optional[List[str]]) -> Optional[str]:
+    if not items:
+        return None
+    cleaned = [str(i).strip() for i in items if str(i).strip()]
+    return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+
+
+class PublishingRepository:
+    """CRUD for publishing packages."""
+
+    def __init__(self, session_provider=session_scope) -> None:
+        self._session_provider = session_provider
+
+    def list(
+        self,
+        *,
+        language: Optional[str] = None,
+        channel_id=_UNSET,
+        status: Optional[str] = None,
+        platform: Optional[str] = None,
+        query: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[PublishingPackageDTO]:
+        with self._session_provider() as session:
+            stmt = select(PublishingPackage)
+            if language:
+                stmt = stmt.where(PublishingPackage.language == language)
+            if channel_id is not _UNSET:
+                if channel_id is None:
+                    stmt = stmt.where(PublishingPackage.channel_id.is_(None))
+                else:
+                    stmt = stmt.where(PublishingPackage.channel_id == channel_id)
+            if status:
+                stmt = stmt.where(PublishingPackage.status == status)
+            if query:
+                like = f"%{query.lower()}%"
+                stmt = stmt.where(
+                    or_(
+                        PublishingPackage.name.ilike(like),
+                        PublishingPackage.title.ilike(like),
+                    )
+                )
+            stmt = stmt.order_by(PublishingPackage.updated_at.desc()).limit(limit)
+            results = [
+                PublishingPackageDTO.from_orm(e) for e in session.execute(stmt).scalars()
+            ]
+        if platform:
+            results = [r for r in results if platform in r.target_platforms]
+        return results
+
+    def get(self, package_id: str) -> Optional[PublishingPackageDTO]:
+        with self._session_provider() as session:
+            entity = session.get(PublishingPackage, package_id)
+            return PublishingPackageDTO.from_orm(entity) if entity else None
+
+    def create(
+        self,
+        *,
+        name: str,
+        title: str,
+        kind: str = "video",
+        language: str = "ru",
+        channel_id: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        hashtags: Optional[List[str]] = None,
+        target_platforms: Optional[List[str]] = None,
+        media_path: Optional[str] = None,
+        media_filename: Optional[str] = None,
+        status: str = "draft",
+    ) -> PublishingPackageDTO:
+        if not name.strip() or not title.strip():
+            raise ValueError("name and title are required")
+        with self._session_provider() as session:
+            entity = PublishingPackage(
+                name=name.strip(),
+                kind=kind,
+                language=language,
+                channel_id=channel_id,
+                title=title.strip(),
+                description=description,
+                tags_json=_dumps_list(tags),
+                hashtags_json=_dumps_list(hashtags),
+                target_platforms_json=_dumps_list(target_platforms),
+                media_path=media_path,
+                media_filename=media_filename,
+                status=status,
+            )
+            session.add(entity)
+            session.flush()
+            return PublishingPackageDTO.from_orm(entity)
+
+    def update(
+        self,
+        package_id: str,
+        *,
+        name: Optional[str] = None,
+        title: Optional[str] = None,
+        kind: Optional[str] = None,
+        language: Optional[str] = None,
+        channel_id=_UNSET,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        hashtags: Optional[List[str]] = None,
+        target_platforms: Optional[List[str]] = None,
+        media_path: Optional[str] = None,
+        media_filename: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[PublishingPackageDTO]:
+        with self._session_provider() as session:
+            entity = session.get(PublishingPackage, package_id)
+            if entity is None:
+                return None
+            if name is not None:
+                entity.name = name.strip()
+            if title is not None:
+                entity.title = title.strip()
+            if kind is not None:
+                entity.kind = kind
+            if language is not None:
+                entity.language = language
+            if channel_id is not _UNSET:
+                entity.channel_id = channel_id
+            if description is not None:
+                entity.description = description
+            if tags is not None:
+                entity.tags_json = _dumps_list(tags)
+            if hashtags is not None:
+                entity.hashtags_json = _dumps_list(hashtags)
+            if target_platforms is not None:
+                entity.target_platforms_json = _dumps_list(target_platforms)
+            if media_path is not None:
+                entity.media_path = media_path
+            if media_filename is not None:
+                entity.media_filename = media_filename
+            if status is not None:
+                entity.status = status
+            session.flush()
+            return PublishingPackageDTO.from_orm(entity)
+
+    def delete(self, package_id: str) -> bool:
+        with self._session_provider() as session:
+            entity = session.get(PublishingPackage, package_id)
+            if entity is None:
+                return False
+            session.delete(entity)
+            return True
+
+
 __all__ = [
     "ChannelDTO",
     "ChannelRepository",
@@ -798,6 +1003,8 @@ __all__ = [
     "DuplicateEntryError",
     "GlossaryEntryDTO",
     "GlossaryRepository",
+    "PublishingPackageDTO",
+    "PublishingRepository",
     "TranslationMemoryDTO",
     "TranslationMemoryRepository",
     "normalize_for_match",

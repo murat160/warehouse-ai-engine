@@ -149,6 +149,49 @@ class GlossaryEntry(Base):
 # ---------------------------------------------------------------------------
 
 
+class PublishingPackage(Base):
+    """A finished media package destined for one or more external platforms.
+
+    The audio/video file lives on local disk under ``data/publishing_inbox/``
+    (in ``.gitignore``). Only the path + JSON metadata are persisted here.
+    """
+
+    __tablename__ = "publishing_packages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(16), default="video")  # "video" | "audio"
+    language: Mapped[str] = mapped_column(String(8), default="ru")
+
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    # Persisted as JSON-encoded text for SQLite portability.
+    tags_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    hashtags_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    target_platforms_json: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, default=None,
+    )
+
+    media_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    media_filename: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default=None,
+    )
+
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+
 class CustomVoiceProfile(Base):
     """User-defined voice profile (Custom Voice).
 

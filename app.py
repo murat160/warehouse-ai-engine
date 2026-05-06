@@ -29,6 +29,8 @@ from src.cloud.language import detect_lang
 from src.cloud.translator import TranslatorService
 from src.cloud.tts_mms import MMSTurkmenTTS
 from src.cloud.video_io import download_video, extract_wav
+from src.publishing import PublishingService, build_zip_for_package
+from src.publishing.models import list_platforms
 from src.storage import init_db
 from src.storage.repositories import (
     ChannelDTO,
@@ -36,6 +38,7 @@ from src.storage.repositories import (
     CustomVoiceRepository,
     DuplicateEntryError,
     GlossaryRepository,
+    PublishingRepository,
     TranslationMemoryRepository,
 )
 from src.translator.styles import (
@@ -49,6 +52,13 @@ from src.translator.styles import (
 )
 from src.translator.translation_memory import TranslationMemoryService
 from src.translator.user_glossary import UserGlossaryService
+from src.ui.i18n import (
+    SUPPORTED_UI_LANGS,
+    UI_LANG_LABELS,
+    get_ui_lang,
+    lang_options,
+    t,
+)
 from src.ui.theme import inject as inject_theme
 from src.voices import (
     VOICE_CATALOG,
@@ -88,12 +98,15 @@ def _bootstrap_storage():
     tm_repo = TranslationMemoryRepository()
     channel_repo = ChannelRepository()
     custom_voice_repo = CustomVoiceRepository()
+    publishing_repo = PublishingRepository()
     return {
         "glossary_repo": glossary_repo,
         "tm_repo": tm_repo,
         "channel_repo": channel_repo,
         "custom_voice_repo": custom_voice_repo,
         "custom_voice_service": CustomVoiceService(custom_voice_repo),
+        "publishing_repo": publishing_repo,
+        "publishing_service": PublishingService(publishing_repo),
         "user_glossary": UserGlossaryService(glossary_repo),
         "translation_memory": TranslationMemoryService(tm_repo),
     }
@@ -180,9 +193,26 @@ def _render_sidebar() -> None:
     channel_repo: ChannelRepository = storage["channel_repo"]
 
     with st.sidebar:
-        st.markdown("### 🤖 Channels (AI agents)")
+        # ----- UI language picker (always first so labels render correctly) -----
+        st.markdown(f"### 🌐 {t('sidebar_ui_language')}")
+        codes = [code for code, _ in lang_options()]
+        active_lang = get_ui_lang()
+        chosen_lang = st.selectbox(
+            t("sidebar_ui_language"),
+            codes,
+            index=codes.index(active_lang) if active_lang in codes else 0,
+            format_func=lambda c: UI_LANG_LABELS.get(c, c),
+            key="ui_lang_select",
+            label_visibility="collapsed",
+        )
+        if chosen_lang != active_lang:
+            st.session_state["ui_lang"] = chosen_lang
+            st.rerun()
+
+        st.markdown("---")
+        st.markdown(f"### {t('sidebar_channels')}")
         channels = channel_repo.list(limit=200)
-        options = [("__none__", "🌍 Global (no channel)")] + [
+        options = [("__none__", t("sidebar_global"))] + [
             (c.id, f"📺 {c.name}") for c in channels
         ]
         ids = [opt[0] for opt in options]
@@ -191,7 +221,7 @@ def _render_sidebar() -> None:
         if active not in ids:
             active = "__none__"
         chosen = st.selectbox(
-            "Active channel",
+            t("sidebar_active_channel"),
             ids,
             index=ids.index(active),
             format_func=lambda v: labels.get(v, v),
@@ -215,18 +245,15 @@ def _render_sidebar() -> None:
             )
 
         st.markdown("---")
-        st.markdown("### ⚙️ Settings")
+        st.markdown(f"### {t('sidebar_settings')}")
         st.selectbox(
-            "Whisper size",
+            t("sidebar_whisper_size"),
             ["tiny", "base", "small", "medium"],
             index=2,
             key="asr_model",
-            help="'tiny'/'base' run fast on CPU; 'small' is the best trade-off.",
+            help=t("sidebar_whisper_help"),
         )
-        st.caption(
-            "User glossary, TM and channels live in `data/warehouse_ai.db` (SQLite). "
-            "Set `DATABASE_URL` to switch to PostgreSQL."
-        )
+        st.caption(t("sidebar_storage_caption"))
 
 
 _render_sidebar()
@@ -238,17 +265,27 @@ _render_sidebar()
 
 
 st.markdown(
-    """
-    <h1>🌐 Warehouse AI Translator</h1>
-    <p class="muted">RU · TK · TR · EN · 15 styles · 16 tones · 7 emotions · 23 voices · channels (AI agents).</p>
+    f"""
+    <h1>🌐 {t('app_title')}</h1>
+    <p class="muted">{t('app_subtitle')}</p>
     """,
     unsafe_allow_html=True,
 )
 
 
-tab_translate, tab_media, tab_dict, tab_memory, tab_channels, tab_voices = st.tabs(
-    ["✨ Translate", "🎬 Audio / Video / URL",
-     "📚 Dictionary", "🧠 Memory", "🤖 Channels", "🎙️ Voices"]
+(
+    tab_translate, tab_media, tab_dict, tab_memory,
+    tab_channels, tab_voices, tab_publish,
+) = st.tabs(
+    [
+        t("tab_translate"),
+        t("tab_media"),
+        t("tab_dictionary"),
+        t("tab_memory"),
+        t("tab_channels"),
+        t("tab_voices"),
+        t("tab_publish"),
+    ]
 )
 
 
@@ -278,17 +315,17 @@ def _render_translate_tab() -> None:
     if default_target_lang not in LANGS:
         default_target_lang = "tk"
 
-    st.markdown("### Translate text")
+    st.markdown(f"### {t('translate_heading')}")
 
     row1 = st.columns([2, 2])
     with row1[0]:
         src = st.selectbox(
-            "From", LANGS, index=LANGS.index(default_source_lang),
+            t("translate_from"), LANGS, index=LANGS.index(default_source_lang),
             format_func=_format_lang, key="t_src",
         )
     with row1[1]:
         tgt = st.selectbox(
-            "To", LANGS, index=LANGS.index(default_target_lang),
+            t("translate_to"), LANGS, index=LANGS.index(default_target_lang),
             format_func=_format_lang, key="t_tgt",
         )
 
@@ -298,22 +335,22 @@ def _render_translate_tab() -> None:
         style_codes = [s.code for s in styles]
         default_idx = style_codes.index(default_style_code) if default_style_code in style_codes else 0
         style = st.selectbox(
-            "Style", styles, index=default_idx,
+            t("translate_style"), styles, index=default_idx,
             format_func=_style_label, key="t_style",
         )
     with row2[1]:
         tones = list_tones()
-        tone_codes = [t.code for t in tones]
+        tone_codes = [tn.code for tn in tones]
         tone_options = [None, *tones]
         if default_tone_code and default_tone_code in tone_codes:
             default_tone_idx = 1 + tone_codes.index(default_tone_code)
         else:
             default_tone_idx = 0
         tone = st.selectbox(
-            "Tone (delivery)",
+            t("translate_tone"),
             tone_options,
             index=default_tone_idx,
-            format_func=lambda t: "— none —" if t is None else _tone_label(t),
+            format_func=lambda v: t("none_dash") if v is None else _tone_label(v),
             key="t_tone",
         )
     with row2[2]:
@@ -321,7 +358,7 @@ def _render_translate_tab() -> None:
         emotion_codes = [e.code for e in emotions]
         emotion_idx = emotion_codes.index(default_emotion_code) if default_emotion_code in emotion_codes else 0
         emotion = st.selectbox(
-            "Emotion", emotions, index=emotion_idx,
+            t("translate_emotion"), emotions, index=emotion_idx,
             format_func=_emotion_label, key="t_emotion",
         )
 
@@ -337,33 +374,28 @@ def _render_translate_tab() -> None:
             else 0
         )
         voice = st.selectbox(
-            "Voice (used for «Voice» button)",
+            t("translate_voice"),
             candidates,
             index=voice_idx,
             format_func=_voice_label,
             key="t_voice",
         )
     with row3[1]:
-        auto = st.checkbox(
-            "Auto-detect source (ru/en/tr)", value=False, key="t_auto"
-        )
+        auto = st.checkbox(t("translate_auto_detect"), value=False, key="t_auto")
 
     txt = st.text_area(
         "Text", height=160,
-        placeholder="Введите текст для перевода…",
+        placeholder=t("translate_input_placeholder"),
         key="t_input", label_visibility="collapsed",
     )
 
     btn_cols = st.columns([1, 5])
     with btn_cols[0]:
         translate_clicked = st.button(
-            "Translate", type="primary", use_container_width=True
+            t("translate_button"), type="primary", use_container_width=True
         )
     with btn_cols[1]:
-        st.caption(
-            "По умолчанию — естественный живой стиль. Меняй стиль/тон/эмоцию для "
-            "блогерского, новостного, культурного и других режимов."
-        )
+        st.caption(t("translate_hint"))
 
     if translate_clicked:
         if not txt.strip():
@@ -1110,8 +1142,8 @@ def _render_channels_tab() -> None:
                         key=f"c_st_{channel.id}",
                     )
                     tone_opts = [None, *list_tones()]
-                    if channel.tone and any(t.code == channel.tone for t in list_tones()):
-                        e_tone_idx = 1 + [t.code for t in list_tones()].index(channel.tone)
+                    if channel.tone and any(tn.code == channel.tone for tn in list_tones()):
+                        e_tone_idx = 1 + [tn.code for tn in list_tones()].index(channel.tone)
                     else:
                         e_tone_idx = 0
                     e_tone = st.selectbox(
@@ -1594,7 +1626,9 @@ def _render_custom_voices() -> None:
 
 
 def _render_voices_tab() -> None:
-    sub_catalog, sub_custom = st.tabs(["📚 Catalog (23)", "🎤 My Voices"])
+    sub_catalog, sub_custom = st.tabs(
+        [t("voices_catalog_heading"), t("voices_my_heading")]
+    )
     with sub_catalog:
         _render_voices_catalog()
     with sub_custom:
@@ -1603,3 +1637,261 @@ def _render_voices_tab() -> None:
 
 with tab_voices:
     _render_voices_tab()
+
+
+# ---------------------------------------------------------------------------
+# Publish tab
+# ---------------------------------------------------------------------------
+
+
+def _render_publish_tab() -> None:
+    storage = _bootstrap_storage()
+    repo: PublishingRepository = storage["publishing_repo"]
+    service: PublishingService = storage["publishing_service"]
+    channel_repo: ChannelRepository = storage["channel_repo"]
+    active_channel = _selected_channel()
+
+    st.markdown(f"### {t('publish_heading')}")
+    st.caption(t("publish_caption"))
+    st.warning(t("publish_auth_warning"))
+
+    platforms = list_platforms()
+
+    # ---------------- Create form ----------------
+    with st.expander(t("publish_create"), expanded=False):
+        with st.form("create_publish", clear_on_submit=True):
+            row = st.columns([2, 1, 1])
+            with row[0]:
+                p_name = st.text_input(
+                    t("name"),
+                    placeholder="Например: Видео для блога — выпуск 1",
+                    key="pub_name",
+                )
+            with row[1]:
+                p_kind = st.selectbox(
+                    t("publish_kind"),
+                    ["video", "audio"],
+                    index=0,
+                    format_func=lambda v: t(f"publish_kind_{v}"),
+                    key="pub_kind",
+                )
+            with row[2]:
+                p_lang = st.selectbox(
+                    t("language"),
+                    LANGS,
+                    index=LANGS.index("ru"),
+                    format_func=_format_lang,
+                    key="pub_lang",
+                )
+
+            p_title = st.text_input(t("publish_title_field"), key="pub_title")
+            p_desc = st.text_area(
+                t("publish_description_field"), height=120, key="pub_desc"
+            )
+
+            row2 = st.columns(2)
+            with row2[0]:
+                p_tags_raw = st.text_input(t("publish_tags_field"), key="pub_tags")
+            with row2[1]:
+                p_hashtags_raw = st.text_input(t("publish_hashtags_field"), key="pub_hashtags")
+
+            p_platforms = st.multiselect(
+                t("publish_platforms"),
+                [p.platform.value for p in platforms],
+                default=["youtube", "tiktok"],
+                format_func=lambda code: f"{next((p.icon for p in platforms if p.platform.value == code), '')} "
+                                         f"{next((p.label for p in platforms if p.platform.value == code), code)}",
+                key="pub_platforms",
+            )
+
+            channels = channel_repo.list(limit=200)
+            channel_choices = [None, *[c.id for c in channels]]
+            default_channel_idx = (
+                channel_choices.index(active_channel.id)
+                if active_channel and active_channel.id in channel_choices
+                else 0
+            )
+            p_channel = st.selectbox(
+                t("sidebar_channels"),
+                channel_choices,
+                index=default_channel_idx,
+                format_func=lambda v: t("sidebar_global") if v is None else next(
+                    (c.name for c in channels if c.id == v), v
+                ),
+                key="pub_channel",
+            )
+
+            p_media = st.file_uploader(
+                t("media_upload"),
+                type=["mp4", "mkv", "mov", "webm", "wav", "mp3", "m4a", "ogg", "flac"],
+                key="pub_media",
+            )
+
+            if st.form_submit_button(t("create"), type="primary"):
+                if not p_name.strip() or not p_title.strip():
+                    st.warning("Имя и название обязательны.")
+                else:
+                    tags = [s.strip() for s in (p_tags_raw or "").split(",") if s.strip()]
+                    hashtags = [s.strip() for s in (p_hashtags_raw or "").split() if s.strip()]
+                    media_bytes = p_media.read() if p_media is not None else None
+                    media_filename = p_media.name if p_media is not None else None
+                    try:
+                        service.create(
+                            name=p_name,
+                            title=p_title,
+                            kind=p_kind,
+                            language=p_lang,
+                            channel_id=p_channel,
+                            description=p_desc.strip() or None,
+                            tags=tags,
+                            hashtags=hashtags,
+                            target_platforms=p_platforms,
+                            media_bytes=media_bytes,
+                            media_filename=media_filename,
+                        )
+                        st.success("OK")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("publishing create failed")
+                        st.error(f"Failed: {exc}")
+
+    # ---------------- List ----------------
+    cols = st.columns([3, 1, 1])
+    with cols[0]:
+        q = st.text_input(t("search"), value="", key="pub_q")
+    with cols[1]:
+        f_lang = st.selectbox(
+            t("language"), ["any", *LANGS], index=0,
+            format_func=lambda c: t("any") if c == "any" else _format_lang(c),
+            key="pub_filter_lang",
+        )
+    with cols[2]:
+        f_status = st.selectbox(
+            "Status",
+            ["any", "draft", "exported", "published"],
+            index=0,
+            format_func=lambda v: t("any") if v == "any" else t(f"publish_status_{v}"),
+            key="pub_filter_status",
+        )
+
+    list_kwargs = {"query": q.strip() or None, "limit": 500}
+    if f_lang != "any":
+        list_kwargs["language"] = f_lang
+    if f_status != "any":
+        list_kwargs["status"] = f_status
+    packages = repo.list(**list_kwargs)
+
+    if not packages:
+        st.markdown(
+            f"<div class='w-empty'>{t('publish_no_packages')}</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.caption(f"{len(packages)} package(s)")
+    for package in packages:
+        with st.container(border=True):
+            row = st.columns([4, 3])
+            with row[0]:
+                st.markdown(f"### 📦 {package.name}")
+                st.caption(
+                    f"{t('publish_kind')}: {t(f'publish_kind_{package.kind}')} · "
+                    f"{_format_lang(package.language)} · "
+                    f"status: {t(f'publish_status_{package.status}')}"
+                )
+                st.markdown(f"**{package.title}**")
+                if package.description:
+                    st.caption(package.description[:280] + ("…" if len(package.description) > 280 else ""))
+                meta_pills = []
+                if package.tags:
+                    meta_pills.append(
+                        f"<span class='w-pill muted'>tags: {', '.join(package.tags[:6])}</span>"
+                    )
+                if package.hashtags:
+                    meta_pills.append(
+                        f"<span class='w-pill muted'>{' '.join(['#' + h.lstrip('#') for h in package.hashtags[:6]])}</span>"
+                    )
+                if package.target_platforms:
+                    icons = " ".join(
+                        next((p.icon for p in platforms if p.platform.value == code), "·")
+                        for code in package.target_platforms
+                    )
+                    meta_pills.append(f"<span class='w-pill'>{icons}</span>")
+                if meta_pills:
+                    st.markdown("".join(meta_pills), unsafe_allow_html=True)
+
+                if package.media_path:
+                    media_file = Path(package.media_path)
+                    if media_file.exists():
+                        if package.kind == "video":
+                            st.video(str(media_file))
+                        else:
+                            st.audio(str(media_file))
+                    else:
+                        st.caption("📁 media file missing on disk")
+                else:
+                    st.caption("📁 no media uploaded")
+
+            with row[1]:
+                # Download ZIP — full archive with metadata + per-platform text.
+                archive = build_zip_for_package(package)
+                st.download_button(
+                    t("publish_export"),
+                    data=archive,
+                    file_name=f"{(package.name or package.id).replace(' ', '_')}.zip",
+                    mime="application/zip",
+                    key=f"pub_dl_{package.id}",
+                    use_container_width=True,
+                )
+                if st.button(
+                    t("publish_export") + " (mark exported)",
+                    key=f"pub_me_{package.id}",
+                    use_container_width=True,
+                ):
+                    service.mark_exported(package.id)
+                    st.rerun()
+                # Open external upload page links
+                for code in package.target_platforms:
+                    descriptor = next(
+                        (p for p in platforms if p.platform.value == code), None
+                    )
+                    if descriptor is None:
+                        continue
+                    st.link_button(
+                        f"{descriptor.icon} {t('publish_open_target')}: {descriptor.label}",
+                        descriptor.upload_url,
+                        use_container_width=True,
+                    )
+                if package.status != "published" and st.button(
+                    t("publish_mark_published"),
+                    key=f"pub_pub_{package.id}",
+                    use_container_width=True,
+                ):
+                    service.mark_published(package.id)
+                    st.rerun()
+                if st.button(
+                    "🗑️ " + t("delete"),
+                    key=f"pub_del_{package.id}",
+                    use_container_width=True,
+                ):
+                    service.delete(package.id)
+                    st.rerun()
+
+    # Platform reference cards (for users who want to set up direct API later).
+    st.markdown("---")
+    st.markdown("#### Supported platforms")
+    cards = st.columns(min(len(platforms), 3))
+    for i, descriptor in enumerate(platforms):
+        with cards[i % len(cards)]:
+            with st.container(border=True):
+                st.markdown(f"### {descriptor.icon} {descriptor.label}")
+                st.caption(descriptor.notes)
+                st.link_button(
+                    t("publish_open_target"),
+                    descriptor.upload_url,
+                    use_container_width=True,
+                )
+
+
+with tab_publish:
+    _render_publish_tab()

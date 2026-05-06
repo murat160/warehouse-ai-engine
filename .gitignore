@@ -53,3 +53,7 @@ data/custom_voices/
 *.ogg
 *.flac
 *.webm
+
+# Publishing inbox — finished media destined for YouTube / TikTok / etc.
+# Stays on local disk only; never commit user-generated media.
+data/publishing_inbox/

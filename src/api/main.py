@@ -22,11 +22,13 @@ from ..providers.fallback_provider import FallbackProvider
 from ..providers.openai_provider import OpenAIProvider
 from ..speech.speech_to_text import SpeechToText
 from ..speech.text_to_speech import TextToSpeech
+from ..publishing import PublishingService
 from ..storage import init_db
 from ..storage.repositories import (
     ChannelRepository,
     CustomVoiceRepository,
     GlossaryRepository,
+    PublishingRepository,
     TranslationMemoryRepository,
 )
 from ..translator.languages import SUPPORTED_CODES, UnsupportedLanguageError
@@ -41,6 +43,7 @@ from . import (
     routes_custom_voices,
     routes_glossary,
     routes_memory,
+    routes_publishing,
 )
 from .schemas import (
     HealthResponse,
@@ -65,6 +68,8 @@ def build_app(
     channel_repository: Optional[ChannelRepository] = None,
     custom_voice_repository: Optional[CustomVoiceRepository] = None,
     custom_voice_service: Optional[CustomVoiceService] = None,
+    publishing_repository: Optional[PublishingRepository] = None,
+    publishing_service: Optional[PublishingService] = None,
     settings: Optional[Settings] = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -203,6 +208,10 @@ def build_app(
                 custom_voice_repository, custom_voice_service, tts=tts,
             )
         )
+    if publishing_repository is not None and publishing_service is not None:
+        app.include_router(
+            routes_publishing.build_router(publishing_repository, publishing_service)
+        )
     app.include_router(routes_catalog.router)
 
     return app
@@ -218,6 +227,8 @@ def create_app() -> FastAPI:
     channel_repo = ChannelRepository()
     custom_voice_repo = CustomVoiceRepository()
     custom_voice_service = CustomVoiceService(custom_voice_repo)
+    publishing_repo = PublishingRepository()
+    publishing_service = PublishingService(publishing_repo)
     user_glossary = UserGlossaryService(glossary_repo)
     translation_memory = TranslationMemoryService(memory_repo)
 
@@ -249,6 +260,8 @@ def create_app() -> FastAPI:
         channel_repository=channel_repo,
         custom_voice_repository=custom_voice_repo,
         custom_voice_service=custom_voice_service,
+        publishing_repository=publishing_repo,
+        publishing_service=publishing_service,
         settings=settings,
     )
 
