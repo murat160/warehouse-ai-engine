@@ -7,11 +7,17 @@
 > _Техническое имя GitHub-репозитория — `warehouse-ai-engine`. Продукт в
 > интерфейсе и в публикациях называется **Murat AI**._
 
-Финальный сайт может жить на собственном домене:
+Финальный сайт может жить на любом субдомене, который направишь на свой
+VPS — деплой полностью domain-agnostic. Примеры:
 
-* `https://murat-ai.com`
 * `https://ai.murat-ai.com`
-* `https://translator.murat-ai.com`
+* `https://ai.ehlitrend.com`
+* `https://translator.your-domain.com`
+
+> ⚠️ Эти ссылки сами по себе **ещё не работают**: A-запись DNS должна
+> быть создана у регистратора (см. [`deploy/dns-records.md`](deploy/dns-records.md)),
+> и стек должен быть запущен на VPS (см.
+> [`docs/self-hosted-deploy.md`](docs/self-hosted-deploy.md)).
 
 Этот репозиторий — **отдельный AI-проект**. Он намеренно изолирован от
 `warehouse-ecosystem` и не содержит кода клиентского, курьерского, продавца
@@ -201,6 +207,13 @@ streamlit run app.py
 PostgreSQL. Полная инструкция:
 [`docs/self-hosted-deploy.md`](docs/self-hosted-deploy.md).
 
+> ⚠️ **Статус доменов**: `ai.murat-ai.com` упоминается в документации
+> только как пример — соответствующая DNS-запись пока не создана,
+> поэтому публичной ссылки **ещё нет**. Деплой работает на любой
+> субдомен, который ты направишь на VPS — например `ai.murat-ai.com`,
+> `ai.ehlitrend.com` или `translator.your-domain.com`. Точные DNS-настройки —
+> [`deploy/dns-records.md`](deploy/dns-records.md).
+
 В репозитории уже есть всё необходимое:
 
 | Файл                                | Назначение                                    |
@@ -208,36 +221,62 @@ PostgreSQL. Полная инструкция:
 | `Dockerfile`                        | Production-образ Streamlit (CPU-only torch)   |
 | `docker-compose.yml`                | App + Postgres + persistent volumes           |
 | `.env.production.example`           | Шаблон секретов (реальный `.env.production` не коммитится) |
-| `deploy/nginx/translator.conf`      | nginx site config + WebSocket + SSL            |
+| `deploy/nginx/murat-ai.conf`        | nginx site template (placeholder `__MURAT_AI_DOMAIN__`) |
+| `deploy/install-nginx.sh`           | Подменяет placeholder на твой домен и активирует site |
+| `deploy/dns-records.md`             | Точные DNS-записи (тип, имя, значение)        |
 | `docs/self-hosted-deploy.md`        | Пошаговая инструкция (Ubuntu)                  |
 
-Короткая версия (на свежем Ubuntu 22.04 / 24.04):
+VPS, к которому привязан проект: **`46.202.189.230`** (Ubuntu).
+
+### DNS-запись (одна строчка у регистратора)
+
+| Type | Name | Content          | Proxy / Cloud                  | TTL |
+|------|------|------------------|--------------------------------|-----|
+| A    | `ai` | `46.202.189.230` | DNS only → потом Proxied (CF)  | 300 |
+
+«Name = `ai`» в зоне `murat-ai.com` даёт `ai.murat-ai.com`. В зоне
+`ehlitrend.com` — `ai.ehlitrend.com`. См.
+[`deploy/dns-records.md`](deploy/dns-records.md).
+
+### Короткая версия деплоя (Ubuntu 22.04 / 24.04)
 
 ```bash
+# 0. На любой машине — настрой DNS (см. таблицу выше).
+
+# 1. На VPS
 cd /opt
 sudo git clone https://github.com/murat160/warehouse-ai-engine.git
 sudo chown -R $USER:$USER warehouse-ai-engine
 cd warehouse-ai-engine
 git checkout issue-2-ai-architecture
 
+# 2. Domain — выбери ОДИН и подставь в команды ниже
+export MURAT_AI_DOMAIN=ai.murat-ai.com         # или ai.ehlitrend.com
+
+# 3. Секреты + контейнеры
 cp .env.production.example .env.production
 chmod 600 .env.production
-nano .env.production              # задать POSTGRES_PASSWORD и т.д.
+nano .env.production              # задать POSTGRES_PASSWORD
+docker compose up -d --build
 
-docker compose up -d --build      # стартует app + Postgres
+# 4. nginx HTTP-bootstrap (нужен Certbot-у для верификации)
+sudo apt install -y nginx snapd
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+sudo deploy/install-nginx.sh --bootstrap "$MURAT_AI_DOMAIN"
 
-sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo sed -i 's/ai\.example\.com/ai.your-domain.com/g' \
-         /etc/nginx/sites-available/translator.conf
-sudo ln -s /etc/nginx/sites-available/translator.conf \
-           /etc/nginx/sites-enabled/translator.conf
-sudo systemctl reload nginx
-
-sudo certbot --nginx -d ai.your-domain.com --redirect \
+# 5. SSL
+sudo certbot --nginx -d "$MURAT_AI_DOMAIN" --redirect \
              --agree-tos -m you@your-domain.com -n
+
+# 6. Финальный nginx с WebSocket / 500 МБ uploads / 600s timeouts
+sudo deploy/install-nginx.sh "$MURAT_AI_DOMAIN"
+
+# 7. Проверка
+curl -I "https://$MURAT_AI_DOMAIN/_stcore/health"   # → 200 OK
 ```
 
-После этого `https://ai.your-domain.com` показывает Streamlit-приложение.
+После этого `https://$MURAT_AI_DOMAIN` показывает Murat AI.
 
 Все пользовательские данные хранятся **на твоей машине**, не в GitHub:
 

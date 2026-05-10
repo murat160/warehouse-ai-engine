@@ -43,17 +43,21 @@ nano .env.production                       # set POSTGRES_PASSWORD, etc.
 
 docker compose up -d --build
 
-sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
-         /etc/nginx/sites-available/translator.conf
-sudo ln -s /etc/nginx/sites-available/translator.conf /etc/nginx/sites-enabled/
-sudo systemctl reload nginx
+# Pick ONE — both work, the deploy is domain-agnostic.
+export MURAT_AI_DOMAIN=ai.murat-ai.com     # or  ai.ehlitrend.com
 
-sudo certbot --nginx -d ai.murat-ai.com --redirect \
+# Bootstrap nginx (HTTP-only) so Certbot can verify the domain.
+sudo deploy/install-nginx.sh --bootstrap "$MURAT_AI_DOMAIN"
+
+# Issue the SSL certificate.
+sudo certbot --nginx -d "$MURAT_AI_DOMAIN" --redirect \
              --agree-tos -m you@your-domain.com -n
+
+# Switch nginx to the full HTTPS config (WebSocket + 500MB uploads + long timeouts).
+sudo deploy/install-nginx.sh "$MURAT_AI_DOMAIN"
 ```
 
-Open `https://ai.murat-ai.com` — you should see the Streamlit UI.
+Open `https://$MURAT_AI_DOMAIN` — you should see the Streamlit UI.
 
 ---
 

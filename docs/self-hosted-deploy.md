@@ -7,23 +7,29 @@ nginx as the TLS reverse proxy.
 
 End result:
 
-> `https://ai.murat-ai.com` → nginx → Streamlit container → Postgres container.
+> `https://<your-domain>` → nginx → Streamlit container → Postgres container.
 
-The placeholder domain throughout this guide is `ai.murat-ai.com`. Replace
-it with whatever subdomain you actually point at this VPS — for example
-`translator.murat-ai.com` or `ai.your-domain.com`.
+The whole flow is **domain-agnostic** — the nginx config uses a placeholder
+`__MURAT_AI_DOMAIN__` that the installer swaps for whatever domain you
+own. Throughout this guide we use the shell variable `MURAT_AI_DOMAIN` so
+you can copy-paste the commands once and they'll work for any choice.
 
-## What you get
+## Choose your domain
 
-* Streamlit app on Python 3.11, GPU-less torch (CPU wheel) — fits a 4 GB VPS.
-* Postgres 16 (Alpine) for glossary / TM / channels / Custom Voices /
-  publishing packages — already wired through `DATABASE_URL`.
-* Persistent named volumes:
-  * `./data` — user-uploaded audio samples, publishing inbox, ffmpeg
-    artefacts. **Safe to back up.**
-  * `hf_cache` — NLLB-200 / Whisper / MMS-TTS weights (~2 GB on first run).
-* nginx config with proper Streamlit WebSocket support, large-file uploads
-  (500 MB), long ASR/TTS timeouts (10 min) and Let's Encrypt SSL.
+Pick whichever DNS zone you control. The nginx config and SSL flow are
+identical for all of them:
+
+```bash
+# Pick ONE and export it for the rest of the session.
+export MURAT_AI_DOMAIN=ai.murat-ai.com        # — option 1
+# export MURAT_AI_DOMAIN=ai.ehlitrend.com     # — option 2
+# export MURAT_AI_DOMAIN=translator.your-domain.com  # — anything you own
+```
+
+> ⚠️ At the time of writing `ai.murat-ai.com` is not yet active — its
+> DNS A record has not been created. **The site will only work after you
+> create the A record (next section)** — see
+> [`deploy/dns-records.md`](../deploy/dns-records.md) for the table.
 
 ## Server requirements
 
@@ -35,12 +41,34 @@ it with whatever subdomain you actually point at this VPS — for example
 | OS       | Ubuntu 22.04 / 24.04 LTS | same |
 | Network  | public IPv4, ports 80 + 443 open | same |
 
-You also need a registered domain pointing to the VPS (an `A` record like
-`ai → <VPS_IP>`).
+VPS used in this project: **`46.202.189.230`** (Ubuntu).
 
 ---
 
-## 1. Install Docker on Ubuntu
+## 1. Create the DNS record
+
+In your DNS provider (Cloudflare or Hostinger DNS) add a single **A**
+record on the zone you chose:
+
+| Type | Name (host) | Content (value)   | Proxy / Cloud                | TTL  |
+|------|-------------|-------------------|------------------------------|------|
+| A    | `ai`        | `46.202.189.230`  | DNS only (initial), then Proxied | 300  |
+
+* **Name** is the subdomain part only — `ai`, not the full FQDN.
+* **Content** is your VPS public IPv4 — `46.202.189.230`.
+* **Proxy** (Cloudflare only): **DNS only / grey cloud** for the first
+  Certbot run, then switch to **Proxied / orange cloud** afterwards.
+
+Verify before continuing:
+
+```bash
+nslookup "$MURAT_AI_DOMAIN" 1.1.1.1
+# Address must include 46.202.189.230 (or a Cloudflare anycast IP if Proxied).
+```
+
+Full DNS reference: [`deploy/dns-records.md`](../deploy/dns-records.md).
+
+## 2. Install Docker on Ubuntu
 
 ```bash
 sudo apt update
@@ -59,13 +87,12 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io \
                     docker-buildx-plugin docker-compose-plugin
 
-# Run docker without sudo (re-login afterwards):
-sudo usermod -aG docker $USER
+sudo usermod -aG docker $USER          # log out + log back in afterwards
 ```
 
 Verify: `docker compose version` and `docker run --rm hello-world`.
 
-## 2. Clone the repository
+## 3. Clone the repository
 
 ```bash
 sudo apt install -y git
@@ -76,7 +103,7 @@ cd warehouse-ai-engine
 git checkout issue-2-ai-architecture
 ```
 
-## 3. Create `.env.production`
+## 4. Create `.env.production`
 
 ```bash
 cp .env.production.example .env.production
@@ -87,17 +114,15 @@ nano .env.production
 What you must set:
 
 * `POSTGRES_PASSWORD` — long random string (`openssl rand -base64 32`).
-* `OPENAI_API_KEY` — only if you want cloud TTS for ru/tr/en or want the
-  FastAPI provider chain. Turkmen voice and offline NLLB translation work
-  without it.
+* `OPENAI_API_KEY` — only if you want cloud TTS for ru/tr/en.
 
 > ⚠️ `.env.production` is in `.gitignore`. Never commit it.
 
-## 4. Start the stack
+## 5. Start the Docker stack
 
 ```bash
 docker compose up -d --build
-docker compose ps      # both services should be "healthy"
+docker compose ps                   # both services should be "healthy"
 docker compose logs -f app
 ```
 
@@ -105,95 +130,93 @@ The first build takes ~5 minutes. The first request hits Whisper + NLLB-200
 + MMS-TTS, which are downloaded into the `hf_cache` volume (~2 GB) — give
 it a couple of minutes for the cold start.
 
-Quick smoke-test the app from the VPS itself:
+Smoke-test on the VPS itself:
 
 ```bash
 curl -fsS http://127.0.0.1:8501/_stcore/health
 # expected: ok
 ```
 
-## 5. Install nginx + Certbot on the host
+## 6. Install nginx + Certbot
 
 ```bash
-sudo apt install -y nginx
-sudo apt install -y snapd
+sudo apt install -y nginx snapd
 sudo snap install --classic certbot
-sudo ln -s /snap/bin/certbot /usr/bin/certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
 ```
 
-Drop the bundled site config:
+## 7. Bootstrap the nginx site (HTTP-only, before SSL)
+
+The repo ships a domain-agnostic nginx template at
+`deploy/nginx/murat-ai.conf` and a one-liner installer:
 
 ```bash
-sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo ln -s /etc/nginx/sites-available/translator.conf \
-           /etc/nginx/sites-enabled/translator.conf
-
-# Replace the placeholder domain.
-sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
-        /etc/nginx/sites-available/translator.conf
+sudo deploy/install-nginx.sh --bootstrap "$MURAT_AI_DOMAIN"
 ```
 
-Before Certbot has issued a certificate, comment out the `listen 443` block
-**or** skip the `nginx -t` for now. Easier path: bootstrap with HTTP only
-(see step 6), then switch on TLS automatically.
+This drops an HTTP-only site at
+`/etc/nginx/sites-available/murat-ai.conf`, enables it, validates and
+reloads nginx. Certbot needs this minimal HTTP block to verify your
+domain via the `/.well-known/acme-challenge/` path.
+
+Smoke-test:
 
 ```bash
-# Temporary HTTP-only setup before Certbot
-sudo tee /etc/nginx/sites-available/translator.conf > /dev/null <<'NGX'
-server {
-    listen 80;
-    server_name ai.murat-ai.com;
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
-    location / { proxy_pass http://127.0.0.1:8501; }
-}
-NGX
-sudo mkdir -p /var/www/certbot
-sudo nginx -t && sudo systemctl reload nginx
+curl -I "http://$MURAT_AI_DOMAIN/_stcore/health"
+# expected: HTTP/1.1 200 OK   (proxied through nginx → Streamlit)
 ```
 
-## 6. Point the domain at the VPS
-
-In your DNS provider create:
-
-```
-Type  Host  Value           TTL
-A     ai    <VPS public IP> 300
-```
-
-Wait until `dig +short ai.murat-ai.com` returns the right IP. With a 300
-TTL this is usually under 5 minutes.
-
-## 7. Issue the SSL certificate
+## 8. Issue the SSL certificate
 
 ```bash
-sudo certbot --nginx -d ai.murat-ai.com \
-             --redirect --agree-tos --email you@your-domain.com -n
+sudo certbot --nginx -d "$MURAT_AI_DOMAIN" --redirect \
+             --agree-tos -m you@your-domain.com -n
 ```
 
-Certbot edits the nginx config in place to add the HTTPS server block and
-sets up a renewal timer (`systemctl status snap.certbot.renew.timer`).
+Certbot creates `/etc/letsencrypt/live/$MURAT_AI_DOMAIN/` with the cert,
+edits the nginx config to add the HTTPS block and sets up automatic
+renewal (`systemctl status snap.certbot.renew.timer`).
 
-Now replace the temporary nginx config with the full one bundled in the
-repo (it has WebSocket + long timeouts + large uploads tuned for Streamlit):
+## 9. Switch nginx to the full HTTPS config
+
+The bootstrap config from step 7 was minimal. Re-run the installer
+**without** `--bootstrap` to drop in the production-grade config
+(WebSocket support for Streamlit, 600 s timeouts, 500 MB upload cap):
 
 ```bash
-sudo cp deploy/nginx/translator.conf /etc/nginx/sites-available/translator.conf
-sudo sed -i 's/ai\.example\.com/ai.murat-ai.com/g' \
-        /etc/nginx/sites-available/translator.conf
-sudo nginx -t && sudo systemctl reload nginx
+sudo deploy/install-nginx.sh "$MURAT_AI_DOMAIN"
 ```
 
-## 8. Verify it works
+The script substitutes `__MURAT_AI_DOMAIN__` → your real domain, validates
+the result and reloads nginx.
 
-* `https://ai.murat-ai.com` opens the Streamlit UI in the browser.
-* Switch the UI language in the sidebar (🇷🇺 / 🇹🇲 / 🇹🇷 / 🇬🇧) — the page
-  re-renders on the chosen language.
-* Translate a short Russian phrase to Turkmen — first call takes ~30 s
-  (model download), subsequent calls are fast.
-* Upload a short video to the **🎬 Аудио / Видео / URL** tab and run it.
-* Health endpoint: `curl https://ai.murat-ai.com/_stcore/health` → `ok`.
+> 💡 **If you use Cloudflare** — switch the A record back to **Proxied**
+> (orange cloud) now. Cloudflare will sit in front of nginx. Traffic
+> path: client → Cloudflare → nginx (TLS) → Streamlit.
 
-## 9. Operations
+## 10. Verify it works
+
+```bash
+curl -I "https://$MURAT_AI_DOMAIN/_stcore/health"
+# expected: HTTP/1.1 200 OK     (200 = healthy, 502 = container down)
+
+# from your laptop:
+open "https://$MURAT_AI_DOMAIN/"     # macOS
+# or just open it in any browser
+```
+
+In the browser you should see the Murat AI Streamlit UI with a sidebar
+language switcher (🇷🇺 / 🇹🇲 / 🇹🇷 / 🇬🇧).
+
+A short functional test:
+
+* Sidebar → switch language to **🇹🇲 Türkmençe** — the page re-renders.
+* Tab **✨ Перевод** → переведи короткую русскую фразу на туркменский.
+  Первый вызов ~30 с (загрузка моделей), потом быстро.
+* Tab **🎬 Аудио / Видео / URL** → загрузи короткий ролик. Whisper сам
+  определит язык, NLLB-200 переведёт, MMS-TTS озвучит на туркменском.
+
+## 11. Operations
 
 | Action                | Command                                              |
 |-----------------------|------------------------------------------------------|
@@ -205,8 +228,9 @@ sudo nginx -t && sudo systemctl reload nginx
 | Backup the data dir   | `tar czf data-$(date +%F).tar.gz data/`              |
 | Backup Postgres       | `docker compose exec db pg_dump -U $POSTGRES_USER $POSTGRES_DB > db-$(date +%F).sql` |
 | Renew SSL manually    | `sudo certbot renew && sudo systemctl reload nginx`  |
+| Switch domain         | `export MURAT_AI_DOMAIN=new-domain.com && sudo deploy/install-nginx.sh "$MURAT_AI_DOMAIN" && sudo certbot --nginx -d "$MURAT_AI_DOMAIN" --redirect --agree-tos -m you@your-domain.com -n` |
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 > **`docker compose up` fails with `port is already allocated`**
 > Something else listens on `8501`. Find it: `sudo ss -tlnp | grep 8501`.
@@ -219,23 +243,27 @@ sudo nginx -t && sudo systemctl reload nginx
 > curl http://127.0.0.1:8501/_stcore/health
 > ```
 
+> **`curl: (35) … unable to get local issuer certificate` after Certbot**
+> Certbot didn't manage to write the certificate. Inspect:
+> `sudo certbot certificates` and `sudo journalctl -u nginx -n 50`.
+> Typical cause: A record points to the wrong IP, or Cloudflare is
+> Proxied during the first cert issuance — toggle to **DNS only** and
+> re-run `certbot --nginx -d $MURAT_AI_DOMAIN`.
+
 > **Streamlit UI loads but never updates / reconnects loop**
-> WebSocket proxying is broken. Make sure
-> `/etc/nginx/sites-available/translator.conf` has the `Upgrade` and
-> `Connection "upgrade"` headers AND a high `proxy_read_timeout` for
-> `/_stcore/stream`.
+> WebSocket proxying is broken. Check that the installed
+> `/etc/nginx/sites-available/murat-ai.conf` contains the `Upgrade` /
+> `Connection "upgrade"` headers in the `/_stcore/stream` location.
 
 > **First model download fails / OOM**
 > NLLB-200 + Whisper + MMS-TTS together need ~3 GB RAM at load time.
-> Pre-download Whisper-tiny instead by setting `Whisper size` to `tiny`
-> in the sidebar — far cheaper than `small`.
+> In the sidebar set **Whisper size** to `tiny` — far cheaper than `small`.
 
 > **Postgres won't accept connections**
-> The DB container starts last. Look for `pg_isready` in
-> `docker compose logs db`. A wrong `POSTGRES_PASSWORD` between
-> `.env.production` and an existing `postgres_data` volume will block
-> startup — wipe with `docker compose down -v` (⚠️ deletes data) and
-> re-create.
+> Look for `pg_isready` in `docker compose logs db`. A wrong
+> `POSTGRES_PASSWORD` between `.env.production` and an existing
+> `postgres_data` volume blocks startup — wipe with
+> `docker compose down -v` (⚠️ deletes data) and re-create.
 
 > **Need to move to a bigger box**
 > Stop the stack, copy `./data/` and the named volumes
@@ -265,7 +293,7 @@ docker volume inspect warehouse-ai-engine_hf_cache
 
 ## Hardening checklist
 
-* [ ] `chmod 600 .env.production` (already done in step 3).
+* [ ] `chmod 600 .env.production` (already done in step 4).
 * [ ] UFW: allow only 22 / 80 / 443 from the public network.
 * [ ] Streamlit container exposes `127.0.0.1:8501` only — never bind to
       `0.0.0.0` on the public interface.
