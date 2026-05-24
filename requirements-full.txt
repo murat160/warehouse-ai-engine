@@ -1,0 +1,19 @@
+# Full AI requirements for Murat AI self-hosted/VPS deployment.
+# Streamlit Cloud uses requirements.txt for lightweight preview.
+
+-r requirements.txt
+
+# --- Translation / ASR / TTS models (open weights, no API key) ---
+transformers==4.51.3
+torch>=2.2.0
+sentencepiece==0.2.0
+sacremoses==0.1.1
+openai-whisper==20250625
+
+# --- Audio processing ---
+soundfile>=0.12,<1.0
+scipy==1.13.1
+numpy>=1.26.0
+
+# --- Production PostgreSQL driver ---
+psycopg[binary]>=3.1,<4.0
