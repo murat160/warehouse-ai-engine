@@ -33,9 +33,13 @@ RUN pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu \
         "torch>=2.2,<3.0"
 
-# 2) Install the rest of the requirements (torch is already satisfied).
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt psycopg[binary]
+# 2) Install the rest of the requirements.
+#    The image uses requirements-full.txt — it pulls in transformers, whisper,
+#    NLLB tokenizer bits and the Postgres driver, in addition to the
+#    lightweight requirements.txt that Streamlit Cloud preview uses.
+#    Torch is already installed above, so pip will skip it.
+COPY requirements.txt requirements-full.txt ./
+RUN pip install --no-cache-dir -r requirements-full.txt
 
 # 3) Copy application source last so code edits do NOT bust the heavy layers.
 COPY . ./
