@@ -1,17 +1,15 @@
-"""Speech-to-text powered by openai-whisper (runs locally, no API key).
+"""Speech-to-text service for Murat AI.
 
-The transcribe call returns both the recognised text and the language
-Whisper detected — so the rest of the pipeline can route translation
-without asking the user to pick a source language.
+Full AI mode uses openai-whisper locally. Streamlit Cloud preview may not have
+Whisper installed, so this module imports it lazily and returns a clear preview
+message instead of crashing the whole UI.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
-
-import whisper
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +26,29 @@ class ASRService:
     def __init__(self, model_name: str = "small") -> None:
         logger.info("loading whisper model %s", model_name)
         self.model_name = model_name
-        self.model = whisper.load_model(model_name)
+        self.model: Optional[Any] = None
+        self.preview_reason: Optional[str] = None
+        try:
+            import whisper  # type: ignore
+
+            self.model = whisper.load_model(model_name)
+        except Exception as exc:  # noqa: BLE001
+            self.preview_reason = str(exc)
+            logger.warning("Whisper unavailable; ASR runs in preview mode: %s", exc)
 
     def transcribe(
         self, wav_path: str, *, language: Optional[str] = None
     ) -> ASRResult:
         """Transcribe ``wav_path``. ``language`` is an optional hint."""
+        if self.model is None:
+            return ASRResult(
+                text=(
+                    "[Murat AI preview mode: speech recognition model is not "
+                    "installed here. Deploy on VPS with requirements-full.txt "
+                    "for real audio/video transcription.]"
+                ),
+                language=language,
+            )
         result = self.model.transcribe(
             wav_path,
             task="transcribe",
