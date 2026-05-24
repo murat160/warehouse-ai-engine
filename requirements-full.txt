@@ -1,9 +1,15 @@
 # Full AI requirements for Murat AI self-hosted/VPS deployment.
 # Streamlit Cloud uses requirements.txt for lightweight preview.
+#
+# Licensing policy: every package here is permissively-licensed
+# (Apache 2.0 / MIT / BSD). The default Hugging Face model loaded by
+# this stack is google/madlad400-3b-mt (Apache 2.0). MMS-TTS / NLLB-200
+# are opt-in and gated by env-vars — see docs/attributions.md.
 
 -r requirements.txt
 
-# --- Translation / ASR / TTS models (open weights, no API key) ---
+# --- Translation / ASR / TTS — code is permissive, model weights are
+# --- chosen at runtime via MURAT_AI_TRANSLATION_MODEL (Apache 2.0 by default).
 transformers==4.51.3
 torch>=2.2.0
 sentencepiece==0.2.0

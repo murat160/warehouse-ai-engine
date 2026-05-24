@@ -28,10 +28,12 @@ VPS — деплой полностью domain-agnostic. Примеры:
 В репозитории сосуществуют две независимые реализации:
 
 1. **Cloud MVP (`app.py` + `src/cloud/`)** — рабочее end-to-end приложение
-   на Streamlit. Перевод через **NLLB-200**, распознавание речи через
-   **openai-whisper**, озвучка туркменского через **Meta MMS-TTS**. Работает
-   без внешних API-ключей. Загружает медиа по ссылке (YouTube/TikTok через
-   `yt-dlp`) или из загруженного файла.
+   на Streamlit. Перевод через **MADLAD-400** (Apache 2.0), распознавание
+   речи через **openai-whisper** (MIT). Туркменская озвучка — opt-in
+   (commercial API через `OPENAI_API_KEY` / `MMS-TTS` под CC-BY-NC если
+   явно включить). Работает без внешних API-ключей для текста и STT.
+   Загружает медиа по ссылке (YouTube/TikTok через `yt-dlp`) или из
+   загруженного файла.
 2. **API-архитектура (`src/api/` + `src/translator/` + `src/speech/` + `src/video/` + `src/providers/`)** —
    провайдер-нейтральный сервис на FastAPI с глоссарием ru↔tk, проверкой
    качества и подключаемыми бэкендами (OpenAI / MMS-TTS).
@@ -368,21 +370,27 @@ pytest -q
 
 ## Attribution & лицензии моделей
 
-Murat AI использует open-weight модели — каждая со своей лицензией.
-Полная таблица + BibTeX-цитаты + предупреждение о коммерческом
-использовании: [`docs/attributions.md`](docs/attributions.md).
+**Murat AI — licence-clean by default.** Каждый бэкенд, включённый
+сразу из коробки, под permissive-лицензией (Apache 2.0 / MIT / Unlicense)
+либо это коммерческий API, output которого принадлежит тебе.
 
-Кратко:
+| Компонент | Назначение | Лицензия | Коммерческое использование |
+|---|---|---|---|
+| **MADLAD-400** (`google/madlad400-3b-mt`) | перевод текста (дефолт) | **Apache 2.0** | ✅ да |
+| **OpenAI Whisper** (локально) | STT | **MIT** | ✅ да |
+| **OpenAI API** (опционально) | TTS / перевод для ru/tr/en | OpenAI ToS — output owned by user | ✅ да |
+| **Streamlit, FastAPI, SQLAlchemy, transformers, torch, yt-dlp, langdetect, ffmpeg-python** | runtime | Apache / MIT / BSD / Unlicense | ✅ да |
+| **ffmpeg** (slim Docker image) | аудио/видео | **LGPL 2.1+** (LGPL build, safe to redistribute) | ✅ да |
 
-| Модель | Лицензия | Коммерческое использование |
+**Opt-in (CC-BY-NC, выключено по умолчанию):**
+
+| Компонент | Активация | Лицензия |
 |---|---|---|
-| Meta NLLB-200 (текст) | CC-BY-NC 4.0 | ❌ только non-commercial |
-| Meta MMS-TTS (туркменский голос) | CC-BY-NC 4.0 | ❌ только non-commercial |
-| OpenAI Whisper (STT) | MIT | ✅ |
-| OpenAI API (опционально) | OpenAI ToS | ✅ |
-| Streamlit, FastAPI, SQLAlchemy, yt-dlp и т.д. | Apache / MIT / Unlicense | ✅ |
+| `facebook/nllb-200-distilled-600M` | `MURAT_AI_TRANSLATION_MODEL=facebook/nllb-200-distilled-600M` | CC-BY-NC 4.0 |
+| `facebook/mms-tts-tuk-script_latin` (Turkmen TTS) | `MMS_TTS_TUK_ENABLED=true` | CC-BY-NC 4.0 |
 
-Если Murat AI пойдёт в платный SaaS — для NLLB-200 / MMS-TTS нужно либо
-переключить tk на коммерчески-лицензированный TTS, либо договориться с
-Meta. Архитектура provider-agnostic — переключение в конфиге, не в коде
-(см. `docs/attributions.md` → раздел «Licence implications»).
+Полная таблица, BibTeX-цитаты и политика коммерческого использования —
+[`docs/attributions.md`](docs/attributions.md). Если хочешь Turkmen TTS
+без NC-ограничения: подключи коммерческий API (`OPENAI_API_KEY`,
+Google Cloud TTS, ElevenLabs, Azure Speech) — output этих API
+принадлежит тебе. Архитектура provider-agnostic — это конфиг, не код.

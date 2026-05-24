@@ -20,7 +20,14 @@ from ..translator.styles import (
 )
 from ..translator.translation_memory import TranslationMemoryService
 from ..translator.user_glossary import UserGlossaryService
-from .config import LANG_CODE_MAP, SUPPORTED_ROUTES
+from .config import (
+    LANG_CODE_MAP,
+    MADLAD_TARGET_TAGS,
+    NLLB_LANG_CODES,
+    SUPPORTED_LANGS,
+    SUPPORTED_ROUTES,
+    USE_MADLAD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +131,7 @@ class TranslatorService:
                 f"unsupported route: {src}->{tgt}. "
                 f"supported: {sorted(SUPPORTED_ROUTES.keys())}"
             )
-        if src not in LANG_CODE_MAP or tgt not in LANG_CODE_MAP:
+        if src not in SUPPORTED_LANGS or tgt not in SUPPORTED_LANGS:
             raise ValueError(f"unsupported language pair: {src}->{tgt}")
 
         # 1) Translation memory short-circuit (channel-scoped first).
@@ -175,18 +182,37 @@ class TranslatorService:
 
         import torch  # type: ignore
 
-        tok.src_lang = LANG_CODE_MAP[src]
-        framed = self._frame_for_style(text, profile)
-        inputs = tok(
-            framed,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512,
-        ).to(self.device)
+        framed_source = self._frame_for_style(text, profile)
+
+        # Two tokenizer styles depending on the active backend.
+        if USE_MADLAD:
+            # MADLAD-400 (Apache 2.0). Target language is an inline tag at
+            # the start of the source; the model auto-detects the source.
+            tag = MADLAD_TARGET_TAGS[tgt]
+            inputs = tok(
+                f"{tag} {framed_source}",
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+            ).to(self.device)
+            generate_kwargs = {}
+        else:
+            # NLLB-200 (legacy, CC-BY-NC) — opt-in via MURAT_AI_TRANSLATION_MODEL.
+            tok.src_lang = NLLB_LANG_CODES[src]
+            inputs = tok(
+                framed_source,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+            ).to(self.device)
+            generate_kwargs = {
+                "forced_bos_token_id": tok.convert_tokens_to_ids(NLLB_LANG_CODES[tgt]),
+            }
+
         with torch.no_grad():
             out = mdl.generate(
                 **inputs,
-                forced_bos_token_id=tok.convert_tokens_to_ids(LANG_CODE_MAP[tgt]),
+                **generate_kwargs,
                 max_length=512,
                 num_beams=self.num_beams,
             )
