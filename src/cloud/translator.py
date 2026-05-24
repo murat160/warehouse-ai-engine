@@ -1,19 +1,15 @@
-"""NLLB-200 powered translation service for the cloud MVP (channel-aware).
+"""NLLB-200 powered translation service for Murat AI.
 
-Loads the model on first use and caches it. Honours user glossary, TM,
-channel-scoping, style / tone / emotion (style/tone/emotion are surfaced
-on the result for display; NLLB has no native control over them, so the
-glossary + TM are the practical enforcement points).
+In full AI mode this service uses NLLB-200 via transformers/torch.
+In Streamlit Cloud preview mode those heavy packages may be absent, so the
+service falls back to a lightweight preview response and keeps the UI alive.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-
-import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..translator.styles import (
     Emotion,
@@ -58,11 +54,20 @@ class TranslatorService:
         self.num_beams = num_beams
         self.user_glossary = user_glossary
         self.translation_memory = translation_memory
-        self._cache: Dict[str, Tuple[AutoTokenizer, AutoModelForSeq2SeqLM]] = {}
+        self._cache: Dict[str, Tuple[Any, Any]] = {}
+        self._preview_reason: Optional[str] = None
 
     def _load(self, model_name: str):
         if model_name in self._cache:
             return self._cache[model_name]
+        try:
+            import torch  # type: ignore
+            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer  # type: ignore
+        except Exception as exc:  # noqa: BLE001
+            self._preview_reason = str(exc)
+            logger.warning("AI translation dependencies unavailable: %s", exc)
+            return None, None
+
         logger.info("loading translation model %s", model_name)
         tok = AutoTokenizer.from_pretrained(model_name)
         mdl = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
@@ -147,8 +152,29 @@ class TranslatorService:
                     provider="translation-memory",
                 )
 
-        # 2) NLLB-200 generation.
+        # 2) NLLB-200 generation, or lightweight preview fallback.
         tok, mdl = self._load(SUPPORTED_ROUTES[route])
+        if tok is None or mdl is None:
+            preview = (
+                f"[Murat AI preview mode: full AI model is not installed here. "
+                f"Deploy on VPS with requirements-full.txt for real translation.]\n\n{text}"
+            )
+            polished = self._apply_user_glossary(preview, src, tgt, channel_id)
+            return CloudTranslationResult(
+                text=polished,
+                source_lang=src,
+                target_lang=tgt,
+                style=profile.code,
+                tone=tone_profile.code if tone_profile else None,
+                emotion=emotion_code,
+                channel_id=channel_id,
+                tm_hit=False,
+                user_glossary_hits=self._detect_user_terms(polished, src, tgt, channel_id),
+                provider="preview-fallback",
+            )
+
+        import torch  # type: ignore
+
         tok.src_lang = LANG_CODE_MAP[src]
         framed = self._frame_for_style(text, profile)
         inputs = tok(
