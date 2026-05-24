@@ -7,7 +7,7 @@ from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 
-BUILD = "screen-preview-fixed-v2 / 2026-05-24-21:30"
+BUILD = "screen-preview-fixed-v3 / 2026-05-24-21:45 / FORCE-REBUILD"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(page_title="Murat AI", page_icon="🌐", layout="wide", initial_sidebar_state="collapsed")
