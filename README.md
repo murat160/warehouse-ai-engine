@@ -365,3 +365,24 @@ pytest -q
 - Секреты (API-ключи) хранятся **только** в `.env` и переменных окружения.
 - В коде, тестах, документации и истории git нет реальных ключей.
 - `.env` исключён из коммита в `.gitignore`.
+
+## Attribution & лицензии моделей
+
+Murat AI использует open-weight модели — каждая со своей лицензией.
+Полная таблица + BibTeX-цитаты + предупреждение о коммерческом
+использовании: [`docs/attributions.md`](docs/attributions.md).
+
+Кратко:
+
+| Модель | Лицензия | Коммерческое использование |
+|---|---|---|
+| Meta NLLB-200 (текст) | CC-BY-NC 4.0 | ❌ только non-commercial |
+| Meta MMS-TTS (туркменский голос) | CC-BY-NC 4.0 | ❌ только non-commercial |
+| OpenAI Whisper (STT) | MIT | ✅ |
+| OpenAI API (опционально) | OpenAI ToS | ✅ |
+| Streamlit, FastAPI, SQLAlchemy, yt-dlp и т.д. | Apache / MIT / Unlicense | ✅ |
+
+Если Murat AI пойдёт в платный SaaS — для NLLB-200 / MMS-TTS нужно либо
+переключить tk на коммерчески-лицензированный TTS, либо договориться с
+Meta. Архитектура provider-agnostic — переключение в конфиге, не в коде
+(см. `docs/attributions.md` → раздел «Licence implications»).
