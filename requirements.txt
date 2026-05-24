@@ -1,38 +1,30 @@
+# Streamlit Cloud preview requirements for Murat AI.
+# Keep this file lightweight so the UI can deploy quickly.
+# Full AI/VPS requirements live in requirements-full.txt.
+
 # --- Core ---
 pydantic>=2.6,<3.0
 pydantic-settings>=2.2,<3.0
 python-dotenv>=1.0,<2.0
 
-# --- API (FastAPI architecture, see src/api) ---
+# --- API architecture ---
 fastapi>=0.110,<1.0
 uvicorn[standard]>=0.29,<1.0
 
-# --- HTTP / cloud-API providers ---
+# --- HTTP / cloud providers ---
 httpx>=0.27,<1.0
 openai>=1.30,<2.0
 
-# --- Persistent storage (user glossary + translation memory) ---
+# --- Persistent storage ---
 SQLAlchemy>=2.0,<3.0
-# Optional, install when DATABASE_URL points at PostgreSQL:
-# psycopg[binary]>=3.1,<4.0
 
-# --- Streamlit cloud MVP UI (app.py) ---
+# --- Streamlit preview UI ---
 streamlit==1.45.1
 
-# --- Translation / ASR / TTS models (open weights, no API key) ---
-transformers==4.51.3
-torch>=2.2.0
-sentencepiece==0.2.0
-sacremoses==0.1.1
+# --- Lightweight helpers ---
 langdetect==1.0.9
-openai-whisper==20250625
-
-# --- Video / audio pipeline ---
-yt-dlp==2026.1.15
+yt-dlp>=2025.1.1
 ffmpeg-python==0.2.0
-soundfile>=0.12,<1.0
-scipy==1.13.1
-numpy>=1.26.0
 
 # --- Tests / dev ---
 pytest>=8.0,<9.0
