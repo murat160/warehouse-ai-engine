@@ -1,14 +1,13 @@
-"""Murat AI — рабочий Streamlit preview-интерфейс.
+"""Murat AI — простой рабочий preview-интерфейс: слева вход, справа готовый результат.
 
-Цель этой ветки: дать пользователю нормальный экран проверки продукта в браузере:
-- русский интерфейс без смешивания английских подписей;
-- слева видео по ссылке или загруженный файл;
-- справа текст/перевод/озвучка;
-- выбор голоса и актёров;
-- попытка реального скачивания публичного видео через yt-dlp;
-- браузерная preview-озвучка выбранного текста.
+Ветка streamlit-preview нужна, чтобы в браузере было понятно, как должен выглядеть продукт:
+- слева пользователь даёт источник: ссылка, файл, текст или образец голоса;
+- справа появляется результат: готовый текст, preview-озвучка, обработанный голос или финальное видео;
+- русский интерфейс без смешивания с английским;
+- попытка скачивания публичной ссылки через yt-dlp;
+- browser TTS для быстрой проверки озвучки текста.
 
-Полный AI-пайплайн Whisper/translation/TTS/render MP4 должен работать на VPS/GPU.
+Полный AI-рендер видео, клонирование голоса и чистая туркменская TTS-модель работают на VPS/GPU backend.
 """
 
 from __future__ import annotations
@@ -21,163 +20,16 @@ import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
-from textwrap import shorten
 from typing import Dict, List, Tuple
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(
-    page_title="Murat AI",
-    page_icon="🌐",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Murat AI", page_icon="🌐", layout="wide", initial_sidebar_state="collapsed")
 
-LANG_LABELS = {
-    "ru": "Русский",
-    "tk": "Türkmençe",
-    "tr": "Türkçe",
-    "en": "English",
-}
+LANG_LABELS = {"ru": "Русский", "tk": "Туркменский", "tr": "Турецкий", "en": "Английский"}
 LANGS = ["ru", "tk", "tr", "en"]
 
-UI = {
-    "ru": {
-        "subtitle": "Профессиональный перевод, озвучка и видеодубляж",
-        "notice": "На этом экране можно реально вставить ссылку/файл, увидеть видео слева, вставить текст справа и прослушать preview-озвучку. Полный AI-рендер MP4 работает на VPS/GPU.",
-        "ui_lang": "Язык интерфейса",
-        "channel": "Канал / AI-агент",
-        "status": "Интерфейс работает",
-        "full": "Полный режим: VPS/GPU",
-        "tab_studio": "🎬 Студия дубляжа",
-        "tab_voice": "🎙️ Голос и аватар",
-        "tab_dictionary": "📚 Словарь",
-        "tab_export": "📦 Скачать результат",
-        "studio_title": "🎬 Студия дубляжа Murat AI",
-        "studio_help": "Слева добавь видео: ссылка или файл. Справа вставь текст, выбери язык и голос. Нажми перевод и озвучку.",
-        "left_video": "1. Видео / аудио",
-        "url": "Ссылка на видео",
-        "url_placeholder": "Вставь ссылку YouTube, TikTok, Instagram или прямую ссылку mp4/webm",
-        "show_url": "Показать ссылку слева",
-        "download_url": "Скачать видео по ссылке",
-        "upload": "Или загрузи файл с компьютера",
-        "no_video": "Видео появится здесь",
-        "download_ok": "Видео скачано и показано слева.",
-        "download_fail": "Не получилось скачать ссылку. Причина:",
-        "right_text": "2. Текст, перевод и озвучка",
-        "source_text": "Исходный текст / распознанный текст",
-        "source_text_help": "Сюда можно вставить текст вручную. В полном режиме VPS этот текст появится автоматически после распознавания речи из видео.",
-        "from": "С языка",
-        "to": "На язык",
-        "style": "Стиль",
-        "tone": "Тон",
-        "emotion": "Эмоция",
-        "voice": "Голос",
-        "translate": "Перевести",
-        "translation": "Готовый перевод",
-        "speak": "Прослушать озвучку",
-        "tts_note": "Preview-озвучка запускается голосами браузера. Кино-озвучка, туркменский MMS/коммерческий TTS и финальный MP4 — на VPS/GPU.",
-        "actors": "Актёры и голоса",
-        "segments": "Сегменты и тайминг",
-        "sync": "Синхронизация",
-        "sync_text": "Полный AI должен подгонять перевод под время: сокращать длинные фразы, делить реплики, добавлять паузы и не давать сценарию уходить вперёд озвучки.",
-        "voice_title": "🎙️ Свой голос / AI-аватар",
-        "voice_help": "Загрузи образец голоса или видео с лицом. В полном режиме система очищает шум, удаляет эхо, нормализует громкость и создаёт голосовой профиль.",
-        "voice_file": "Образец голоса",
-        "avatar_file": "Видео для аватара",
-        "voice_name": "Название голоса / аватара",
-        "consent": "Я подтверждаю, что имею право использовать этот голос/видео",
-        "create_voice": "Создать голосовой профиль",
-        "dictionary_title": "📚 Замена слов",
-        "dictionary_help": "Если слово переведено неправильно, добавь правило. Потом Murat AI должен каждый раз подменять это слово автоматически.",
-        "word_from": "Какое слово искать",
-        "word_to": "На что заменить",
-        "scope": "Где применять",
-        "save": "Сохранить правило",
-        "export_title": "📦 Готовый результат",
-        "export_help": "Здесь должны появляться финальный MP4, субтитры, аудиодорожки и ZIP-пакет. Сейчас доступен экспорт текста/SRT из preview.",
-        "download_text": "Скачать перевод TXT",
-        "download_srt": "Скачать SRT",
-        "platforms": "Платформы публикации",
-        "package": "Создать пакет публикации",
-    },
-    "en": {
-        "subtitle": "Professional translation, voiceover and video dubbing",
-        "notice": "Paste a video link/file on the left, text on the right, then preview translation and voiceover. Full MP4 AI rendering runs on VPS/GPU.",
-        "ui_lang": "Interface language",
-        "channel": "Channel / AI agent",
-        "status": "UI is online",
-        "full": "Full mode: VPS/GPU",
-        "tab_studio": "🎬 Dubbing studio",
-        "tab_voice": "🎙️ Voice and avatar",
-        "tab_dictionary": "📚 Dictionary",
-        "tab_export": "📦 Downloads",
-        "studio_title": "🎬 Murat AI dubbing studio",
-        "studio_help": "Add video on the left, paste text on the right, choose language and voice, then translate and preview voiceover.",
-        "left_video": "1. Video / audio",
-        "url": "Video URL",
-        "url_placeholder": "Paste YouTube, TikTok, Instagram or direct mp4/webm URL",
-        "show_url": "Show URL on the left",
-        "download_url": "Download video from URL",
-        "upload": "Or upload file from computer",
-        "no_video": "Video will appear here",
-        "download_ok": "Video downloaded and shown on the left.",
-        "download_fail": "Could not download the URL. Reason:",
-        "right_text": "2. Text, translation and voiceover",
-        "source_text": "Source / recognized text",
-        "source_text_help": "Paste text manually. In full VPS mode this text appears automatically after ASR.",
-        "from": "From",
-        "to": "To",
-        "style": "Style",
-        "tone": "Tone",
-        "emotion": "Emotion",
-        "voice": "Voice",
-        "translate": "Translate",
-        "translation": "Final translation",
-        "speak": "Play voice preview",
-        "tts_note": "Preview voiceover uses browser voices. Cinema TTS and final MP4 rendering run on VPS/GPU.",
-        "actors": "Actors and voices",
-        "segments": "Segments and timing",
-        "sync": "Synchronization",
-        "sync_text": "Full AI must fit translation to timing: shorten long phrases, split dialogue and add pauses.",
-        "voice_title": "🎙️ Custom voice / AI avatar",
-        "voice_help": "Upload voice or face video. Full mode cleans noise, removes echo, normalizes loudness and creates a voice profile.",
-        "voice_file": "Voice sample",
-        "avatar_file": "Avatar video",
-        "voice_name": "Voice / avatar name",
-        "consent": "I confirm I have the right to use this voice/video",
-        "create_voice": "Create voice profile",
-        "dictionary_title": "📚 Word replacement",
-        "dictionary_help": "Save rules for words Murat AI must replace automatically every time.",
-        "word_from": "Find word",
-        "word_to": "Replace with",
-        "scope": "Scope",
-        "save": "Save rule",
-        "export_title": "📦 Result downloads",
-        "export_help": "Final MP4, subtitles, audio tracks and ZIP should appear here. Preview exports text/SRT now.",
-        "download_text": "Download TXT translation",
-        "download_srt": "Download SRT",
-        "platforms": "Publishing platforms",
-        "package": "Create publishing package",
-    },
-}
-
-# Пока для туркменского и турецкого используем английский fallback, но русский полностью русский.
-UI["tk"] = UI["en"]
-UI["tr"] = UI["en"]
-
-CHANNELS = [
-    "Основной канал",
-    "Туркменская культура",
-    "Блог",
-    "Новости",
-    "Уличный разговорный стиль",
-    "Кино-дубляж",
-]
-STYLES = ["Естественный", "Блогерский", "Разговорный", "Уличный", "Литературный", "Официальный", "Кино", "Реклама"]
-TONES = ["Спокойный", "Уверенный", "Дружелюбный", "Тёплый", "Серьёзный", "Эмоциональный", "Культурный"]
-EMOTIONS = ["Нейтрально", "Радостно", "Грустно", "Серьёзно", "Взволнованно", "Тепло"]
 VOICE_PROFILES = [
     "Туркменский мужской — кино",
     "Туркменский женский — чистый",
@@ -188,29 +40,36 @@ VOICE_PROFILES = [
     "Английский женский — естественный",
     "Мой загруженный голос",
 ]
-PLATFORMS = ["YouTube", "TikTok", "Instagram", "Facebook", "Telegram", "X", "Скачать на компьютер"]
 
 SAMPLE_TRANSLATIONS: Dict[Tuple[str, str], str] = {
     ("ru", "tk"): "Salam. Men bu wideony arassa türkmen diline terjime edip, professional derejede seslendirmek isleýärin.",
     ("tk", "ru"): "Здравствуйте. Я хочу перевести это видео и сделать профессиональную озвучку.",
-    ("ru", "en"): "Hello. I want to translate this video into clean English and create professional dubbing.",
+    ("ru", "en"): "Hello. I want to translate this video into clean English and create professional voiceover.",
     ("en", "ru"): "Здравствуйте. Я хочу перевести это видео на русский и сделать профессиональную озвучку.",
     ("ru", "tr"): "Merhaba. Bu videoyu temiz Türkçeye çevirip profesyonel dublaj yapmak istiyorum.",
     ("tr", "ru"): "Здравствуйте. Это тестовый перевод с турецкого на русский.",
 }
 
 
-def t(key: str) -> str:
-    lang = st.session_state.get("ui_lang", "ru")
-    return UI.get(lang, UI["ru"]).get(key, key)
+def init_state() -> None:
+    defaults = {
+        "source_media": None,
+        "final_text": "",
+        "dictionary_rules": [],
+        "last_action": "Ожидаю источник слева.",
+        "voice_sample_name": None,
+        "clean_voice_ready": False,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
-def is_direct_video_url(url: str) -> bool:
-    return bool(re.search(r"\.(mp4|webm|mov|m4v)(\?|$)", url.strip(), flags=re.I))
+def direct_media_url(url: str) -> bool:
+    return bool(re.search(r"\.(mp4|webm|mov|m4v|mp3|wav|m4a)(\?|$)", url.strip(), flags=re.I))
 
 
 def download_video(url: str) -> str:
-    """Download a public URL with yt-dlp and return local file path."""
     from yt_dlp import YoutubeDL  # type: ignore
 
     target_dir = Path(tempfile.gettempdir()) / "murat_ai_preview"
@@ -229,14 +88,13 @@ def download_video(url: str) -> str:
     with YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-        if not filename.endswith(".mp4") and os.path.exists(Path(filename).with_suffix(".mp4")):
-            filename = str(Path(filename).with_suffix(".mp4"))
-    return filename
+        mp4 = str(Path(filename).with_suffix(".mp4"))
+        return mp4 if os.path.exists(mp4) else filename
 
 
-def apply_dictionary_rules(text: str, rules: List[Dict[str, str]]) -> str:
+def apply_dictionary(text: str) -> str:
     result = text
-    for rule in rules:
+    for rule in st.session_state.dictionary_rules:
         src = (rule.get("from") or "").strip()
         dst = (rule.get("to") or "").strip()
         if src and dst:
@@ -247,240 +105,221 @@ def apply_dictionary_rules(text: str, rules: List[Dict[str, str]]) -> str:
 def translate_preview(text: str, src: str, tgt: str) -> str:
     if not text.strip():
         return ""
-    base = SAMPLE_TRANSLATIONS.get((src, tgt))
-    if base:
-        return base
-    return f"[{LANG_LABELS[src]} → {LANG_LABELS[tgt]}] {text}"
+    translated = SAMPLE_TRANSLATIONS.get((src, tgt), f"[{LANG_LABELS[src]} → {LANG_LABELS[tgt]}] {text}")
+    return apply_dictionary(translated)
 
 
 def make_srt(text: str) -> str:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        lines = ["Murat AI preview"]
-    blocks = []
+    lines = [line.strip() for line in text.splitlines() if line.strip()] or ["Murat AI preview"]
+    out = []
     sec = 0
-    for idx, line in enumerate(lines, 1):
-        start = f"00:00:{sec:02d},000"
+    for i, line in enumerate(lines, 1):
+        out.append(f"{i}\n00:00:{sec:02d},000 --> 00:00:{sec + 4:02d},000\n{line}\n")
         sec += 4
-        end = f"00:00:{sec:02d},000"
-        blocks.append(f"{idx}\n{start} --> {end}\n{line}\n")
-    return "\n".join(blocks)
+    return "\n".join(out)
 
 
-def make_segments(text: str) -> List[Dict[str, str]]:
-    chunks = [c.strip() for c in re.split(r"[.!?\n]+", text) if c.strip()]
-    if not chunks:
-        chunks = ["Готовый перевод появится здесь"]
-    rows = []
-    current = 0
-    actors = ["Актёр 1", "Актёр 2", "Диктор"]
-    for i, chunk in enumerate(chunks[:8]):
-        duration = max(3, min(7, len(chunk) // 18 + 3))
-        rows.append({
-            "Начало": f"00:{current:02d}",
-            "Конец": f"00:{current + duration:02d}",
-            "Кто говорит": actors[i % len(actors)],
-            "Текст": shorten(chunk, width=90, placeholder="…"),
-            "Статус": "Помещается",
-        })
-        current += duration
-    return rows
-
-
-def speech_component(text: str, lang: str, voice_name: str, button_label: str) -> None:
-    safe_text = json.dumps(text)
-    safe_lang = json.dumps({"ru": "ru-RU", "tk": "tr-TR", "tr": "tr-TR", "en": "en-US"}.get(lang, "ru-RU"))
-    safe_voice = json.dumps(voice_name)
+def speech_button(text: str, lang: str, voice: str) -> None:
+    safe_text = json.dumps(text or "Нет текста для озвучки")
+    browser_lang = {"ru": "ru-RU", "tk": "tr-TR", "tr": "tr-TR", "en": "en-US"}.get(lang, "ru-RU")
+    safe_lang = json.dumps(browser_lang)
+    safe_voice = json.dumps(voice)
     components.html(
         f"""
-        <div style="font-family:Inter,Arial,sans-serif; padding:14px; border-radius:16px; background:#111827; color:white; border:1px solid #374151;">
-          <button id="speakBtn" style="background:#7c3aed;color:white;border:0;border-radius:12px;padding:12px 18px;font-weight:800;cursor:pointer;">▶ {html.escape(button_label)}</button>
-          <button id="stopBtn" style="margin-left:8px;background:#374151;color:white;border:0;border-radius:12px;padding:12px 18px;font-weight:700;cursor:pointer;">■ Стоп</button>
-          <div style="margin-top:10px;color:#cbd5e1;font-size:13px;">Голос: {html.escape(voice_name)} · preview через браузер</div>
+        <div style="font-family:Inter,Arial,sans-serif; padding:16px; border-radius:18px; background:#111827; color:white; border:1px solid #334155;">
+            <button id="play" style="background:#7c3aed;color:#fff;border:0;border-radius:14px;padding:13px 20px;font-weight:800;cursor:pointer;">▶ Прослушать озвучку</button>
+            <button id="stop" style="margin-left:8px;background:#334155;color:#fff;border:0;border-radius:14px;padding:13px 20px;font-weight:800;cursor:pointer;">■ Стоп</button>
+            <div style="margin-top:10px;color:#cbd5e1;font-size:13px;">Preview-голос: {html.escape(voice)}. В полном режиме здесь будет реальный TTS/мой голос.</div>
         </div>
         <script>
-          const text = {safe_text};
-          const lang = {safe_lang};
-          const voiceHint = {safe_voice}.toLowerCase();
-          const speak = () => {{
-            window.speechSynthesis.cancel();
-            const utter = new SpeechSynthesisUtterance(text || 'Нет текста для озвучки');
-            utter.lang = lang;
-            utter.rate = voiceHint.includes('кино') ? 0.92 : 1.0;
-            utter.pitch = voiceHint.includes('женский') ? 1.12 : 0.95;
-            const voices = window.speechSynthesis.getVoices();
-            const match = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(lang.slice(0,2).toLowerCase()));
-            if (match) utter.voice = match;
-            window.speechSynthesis.speak(utter);
-          }};
-          document.getElementById('speakBtn').onclick = speak;
-          document.getElementById('stopBtn').onclick = () => window.speechSynthesis.cancel();
+            const text = {safe_text};
+            const lang = {safe_lang};
+            const voiceName = {safe_voice}.toLowerCase();
+            function run() {{
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = lang;
+                u.rate = voiceName.includes('кино') ? 0.90 : 1.0;
+                u.pitch = voiceName.includes('женский') ? 1.12 : 0.95;
+                const voices = window.speechSynthesis.getVoices();
+                const found = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(lang.slice(0,2).toLowerCase()));
+                if (found) u.voice = found;
+                window.speechSynthesis.speak(u);
+            }}
+            document.getElementById('play').onclick = run;
+            document.getElementById('stop').onclick = () => window.speechSynthesis.cancel();
         </script>
         """,
-        height=115,
+        height=120,
     )
 
+
+def show_media(source) -> None:
+    if source is None:
+        st.markdown("<div class='empty'>🎬<br><br>Здесь появится видео или аудио</div>", unsafe_allow_html=True)
+        return
+    try:
+        if hasattr(source, "name"):
+            name = source.name.lower()
+            if name.endswith(("mp3", "wav", "m4a", "flac", "ogg")):
+                st.audio(source)
+            else:
+                st.video(source)
+        else:
+            st.video(source)
+    except Exception:
+        st.info("Источник принят. Если браузер не показывает ссылку напрямую, нажми «Скачать ссылку».")
+
+
+init_state()
 
 st.markdown(
     """
     <style>
-    .block-container {padding-top: 2.2rem; max-width: 1420px;}
-    [data-testid="stSidebar"] {background: linear-gradient(180deg,#121426,#24283a);}    
-    .hero {border:1px solid rgba(255,255,255,.12); border-radius:24px; padding:24px; background:linear-gradient(135deg,rgba(124,58,237,.18),rgba(14,165,233,.10)); margin-bottom:18px;}
-    .card {border:1px solid rgba(255,255,255,.14); border-radius:22px; padding:18px; background:rgba(255,255,255,.045); box-shadow:0 14px 40px rgba(0,0,0,.16);} 
-    .drop {border:2px dashed rgba(124,58,237,.75); border-radius:24px; padding:28px; min-height:310px; text-align:center; background:rgba(124,58,237,.08); display:flex; flex-direction:column; justify-content:center;}
-    .pill {display:inline-block; padding:7px 12px; border-radius:999px; background:#143d2a; color:#b9ffd8; font-weight:800;}
+    .block-container {max-width: 1440px; padding-top: 1.8rem;}
+    .hero {border-radius:28px; padding:26px 30px; background:linear-gradient(135deg,#181a2f,#261b48 55%,#0f3550); border:1px solid rgba(255,255,255,.14); margin-bottom:20px;}
+    .hero h1 {margin:0; font-size:44px;}
+    .hero p {font-size:18px; color:#dbeafe; margin:.5rem 0 0;}
+    .panel {border-radius:26px; padding:20px; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.14); box-shadow:0 20px 45px rgba(0,0,0,.18); min-height:720px;}
+    .panel-title {font-size:23px; font-weight:900; margin-bottom:8px;}
+    .panel-sub {color:#cbd5e1; margin-bottom:16px;}
+    .empty {border:2px dashed rgba(124,58,237,.75); border-radius:24px; padding:46px; min-height:330px; text-align:center; background:rgba(124,58,237,.08); display:flex; flex-direction:column; justify-content:center; color:#dbeafe; font-size:18px;}
+    .ok {display:inline-block; padding:8px 13px; border-radius:999px; background:#143d2a; color:#b9ffd8; font-weight:800; margin:6px 0 12px;}
+    .warn {display:inline-block; padding:8px 13px; border-radius:999px; background:#3b2a10; color:#ffe0a3; font-weight:800; margin:6px 0 12px;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-if "dictionary_rules" not in st.session_state:
-    st.session_state.dictionary_rules = []
-if "downloaded_video" not in st.session_state:
-    st.session_state.downloaded_video = None
-if "translation_text" not in st.session_state:
-    st.session_state.translation_text = ""
-
-st.sidebar.title("🌐 Murat AI")
-st.session_state["ui_lang"] = st.sidebar.selectbox(
-    "Язык интерфейса",
-    LANGS,
-    format_func=lambda x: LANG_LABELS[x],
-    index=0,
-    key="ui_lang_select",
+st.markdown(
+    "<div class='hero'><h1>🌐 Murat AI</h1><p>Слева вставляешь источник. Справа получаешь готовый результат: текст, озвучку, обработанный голос или видео.</p></div>",
+    unsafe_allow_html=True,
 )
-active_channel = st.sidebar.selectbox(t("channel"), CHANNELS)
-st.sidebar.success(t("status"))
-st.sidebar.caption(t("full"))
 
-st.markdown(f"<div class='hero'><h1>🌐 Murat AI</h1><h3>{t('subtitle')}</h3><p>{t('notice')}</p></div>", unsafe_allow_html=True)
+mode = st.radio(
+    "Что сделать?",
+    [
+        "Видео → готовое видео с озвучкой",
+        "Текст → озвучка",
+        "Текст → готовый перевод",
+        "Мой голос → чистый голос / озвучка моим голосом",
+    ],
+    horizontal=True,
+)
 
-tab_studio, tab_voice, tab_dictionary, tab_export = st.tabs([
-    t("tab_studio"),
-    t("tab_voice"),
-    t("tab_dictionary"),
-    t("tab_export"),
-])
+left, right = st.columns([1, 1], gap="large")
 
-with tab_studio:
-    st.header(t("studio_title"))
-    st.write(t("studio_help"))
-    left, right = st.columns([1.05, 1.25], gap="large")
+with left:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.markdown("<div class='panel-title'>⬅️ Входные данные</div>", unsafe_allow_html=True)
+    st.markdown("<div class='panel-sub'>Сюда вставляется ссылка, файл, текст или твой голос.</div>", unsafe_allow_html=True)
 
-    with left:
-        st.markdown(f"<div class='card'><h3>{t('left_video')}</h3></div>", unsafe_allow_html=True)
-        video_url = st.text_input(t("url"), placeholder=t("url_placeholder"))
-        c_show, c_download = st.columns(2)
-        with c_show:
-            show_clicked = st.button(t("show_url"), use_container_width=True)
-        with c_download:
-            download_clicked = st.button(t("download_url"), use_container_width=True, type="primary")
-
-        if show_clicked and video_url.strip():
-            st.session_state.downloaded_video = video_url.strip()
-
-        if download_clicked and video_url.strip():
-            with st.spinner("Скачиваю видео..."):
+    if mode == "Видео → готовое видео с озвучкой":
+        url = st.text_input("Ссылка на видео", placeholder="YouTube / TikTok / Instagram / прямой mp4")
+        b1, b2 = st.columns(2)
+        if b1.button("Показать ссылку", use_container_width=True):
+            if url.strip():
+                st.session_state.source_media = url.strip()
+                st.session_state.last_action = "Ссылка поставлена слева."
+        if b2.button("Скачать ссылку", type="primary", use_container_width=True):
+            if url.strip():
                 try:
-                    st.session_state.downloaded_video = download_video(video_url.strip())
-                    st.success(t("download_ok"))
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"{t('download_fail')} {exc}")
-                    st.session_state.downloaded_video = video_url.strip()
-
-        uploaded = st.file_uploader(t("upload"), type=["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a"])
+                    with st.spinner("Скачиваю видео..."):
+                        st.session_state.source_media = download_video(url.strip())
+                        st.session_state.last_action = "Видео скачано."
+                    st.success("Видео скачано.")
+                except Exception as exc:
+                    st.session_state.source_media = url.strip()
+                    st.error(f"Не удалось скачать. Показываю ссылку напрямую. Ошибка: {exc}")
+        uploaded = st.file_uploader("Или загрузи видео/аудио с компьютера", type=["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a"])
         if uploaded is not None:
-            st.session_state.downloaded_video = uploaded
+            st.session_state.source_media = uploaded
+            st.session_state.last_action = "Файл загружен."
+        show_media(st.session_state.source_media)
+        source_text = st.text_area("Текст из видео / ручная правка текста", height=130, value="Привет. Я хочу перевести это видео на туркменский язык и озвучить моим голосом.")
 
-        source = st.session_state.downloaded_video
-        if source is None:
-            st.markdown(f"<div class='drop'>🎬<br><br>{t('no_video')}</div>", unsafe_allow_html=True)
-        else:
-            try:
-                if isinstance(source, str):
-                    if is_direct_video_url(source) or os.path.exists(source):
-                        st.video(source)
-                    else:
-                        st.video(source)
-                else:
-                    name = getattr(source, "name", "").lower()
-                    if name.endswith(("mp3", "wav", "m4a")):
-                        st.audio(source)
-                    else:
-                        st.video(source)
-            except Exception:
-                st.info("Ссылка принята. Если браузер не показывает видео, нажми «Скачать видео по ссылке».")
+    elif mode == "Текст → озвучка":
+        source_text = st.text_area("Текст для озвучки", height=310, value="Привет. Это тест озвучки Murat AI. Я выбираю голос, и справа сразу слушаю результат.")
+        st.info("Видео не нужно. Слева только текст, справа готовая озвучка.")
 
-    with right:
-        st.markdown(f"<div class='card'><h3>{t('right_text')}</h3></div>", unsafe_allow_html=True)
-        r1, r2, r3 = st.columns(3)
-        source_lang = r1.selectbox(t("from"), LANGS, format_func=lambda x: LANG_LABELS[x], index=0)
-        target_lang = r2.selectbox(t("to"), LANGS, format_func=lambda x: LANG_LABELS[x], index=1)
-        voice = r3.selectbox(t("voice"), VOICE_PROFILES, index=0)
-        r4, r5, r6 = st.columns(3)
-        style = r4.selectbox(t("style"), STYLES, index=0)
-        tone = r5.selectbox(t("tone"), TONES, index=2)
-        emotion = r6.selectbox(t("emotion"), EMOTIONS, index=0)
+    elif mode == "Текст → готовый перевод":
+        source_text = st.text_area("Текст для перевода", height=360, value="Привет. Я хочу получить чистый туркменский перевод и потом при необходимости заменить отдельные слова.")
+        st.info("Слева текст, справа готовый перевод.")
 
-        source_text = st.text_area(
-            t("source_text"),
-            value="Привет. Я хочу перевести это видео на чистый туркменский язык и сделать профессиональную озвучку.",
-            height=150,
-            help=t("source_text_help"),
-        )
-        if st.button(t("translate"), type="primary", use_container_width=True):
-            translated = translate_preview(source_text, source_lang, target_lang)
-            translated = apply_dictionary_rules(translated, st.session_state.dictionary_rules)
-            st.session_state.translation_text = translated
-            st.session_state.segments = make_segments(translated)
-
-        translation = st.text_area(t("translation"), value=st.session_state.translation_text, height=160)
-        st.session_state.translation_text = translation
-        st.caption(t("tts_note"))
-        speech_component(translation or source_text, target_lang, voice, t("speak"))
-
-        st.subheader(t("actors"))
-        actor_rows = [
-            {"Актёр": "Актёр 1", "Роль": "Главный герой", "Голос": voice, "Качество": "Кино"},
-            {"Актёр": "Актёр 2", "Роль": "Второй герой", "Голос": "Туркменский женский — чистый", "Качество": "Студия"},
-            {"Актёр": "Диктор", "Роль": "Закадровый голос", "Голос": "Русский мужской — документальный", "Качество": "Broadcast"},
-        ]
-        st.data_editor(actor_rows, use_container_width=True, hide_index=True, num_rows="dynamic")
-
-        st.subheader(t("segments"))
-        st.dataframe(st.session_state.get("segments", make_segments(translation or source_text)), use_container_width=True, hide_index=True)
-        st.markdown(f"<span class='pill'>✅ {t('sync')}</span>", unsafe_allow_html=True)
-        st.caption(t("sync_text"))
-
-with tab_voice:
-    st.header(t("voice_title"))
-    st.write(t("voice_help"))
-    v1, v2 = st.columns(2, gap="large")
-    with v1:
-        voice_name = st.text_input(t("voice_name"), "Мой голос")
-        st.file_uploader(t("voice_file"), type=["wav", "mp3", "m4a", "flac"], key="voice_sample")
-        st.checkbox("Очистить шум", value=True)
+    else:
+        st.markdown("### 1. Загрузи свой голос")
+        voice_sample = st.file_uploader("Аудиозапись твоего голоса", type=["wav", "mp3", "m4a", "flac", "ogg"])
+        if voice_sample is not None:
+            st.session_state.voice_sample_name = voice_sample.name
+            st.audio(voice_sample)
+        st.checkbox("Убрать шум", value=True)
         st.checkbox("Удалить эхо", value=True)
-        st.checkbox("Нормализовать громкость", value=True)
-        consent = st.checkbox(t("consent"))
-        if st.button(t("create_voice"), type="primary"):
-            if consent:
-                st.success(f"Голосовой профиль «{voice_name}» принят для обработки.")
-            else:
-                st.error("Нужно подтвердить право на использование голоса/видео.")
-    with v2:
-        st.file_uploader(t("avatar_file"), type=["mp4", "mov", "webm"], key="avatar_sample")
-        st.markdown("<div class='drop'>🧑‍🎤<br><br>Здесь будет preview аватара</div>", unsafe_allow_html=True)
+        st.checkbox("Выровнять громкость", value=True)
+        st.checkbox("Сделать голос чистым для озвучки", value=True)
+        source_text = st.text_area("Текст, который нужно озвучить моим голосом", height=170, value="Этот текст должен быть озвучен моим голосом после очистки аудио и создания голосового профиля.")
+        if st.button("Обработать мой голос", type="primary", use_container_width=True):
+            st.session_state.clean_voice_ready = True
+            st.session_state.last_action = "Голос принят для очистки и создания профиля."
 
-with tab_dictionary:
-    st.header(t("dictionary_title"))
-    st.write(t("dictionary_help"))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with right:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.markdown("<div class='panel-title'>➡️ Готовый результат</div>", unsafe_allow_html=True)
+    st.markdown("<div class='panel-sub'>Здесь появляется то, что пользователь должен получить.</div>", unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    src_lang = c1.selectbox("С языка", LANGS, format_func=lambda x: LANG_LABELS[x], index=0)
+    tgt_lang = c2.selectbox("На язык", LANGS, format_func=lambda x: LANG_LABELS[x], index=1)
+    voice = c3.selectbox("Голос", VOICE_PROFILES, index=0)
+
+    if mode in ["Видео → готовое видео с озвучкой", "Текст → готовый перевод"]:
+        if st.button("Создать результат", type="primary", use_container_width=True):
+            st.session_state.final_text = translate_preview(source_text, src_lang, tgt_lang)
+            st.session_state.last_action = "Перевод создан."
+    elif mode == "Текст → озвучка":
+        if st.button("Создать озвучку", type="primary", use_container_width=True):
+            st.session_state.final_text = source_text
+            st.session_state.last_action = "Озвучка готова к прослушиванию."
+    else:
+        if st.button("Озвучить моим голосом", type="primary", use_container_width=True):
+            st.session_state.final_text = source_text
+            st.session_state.last_action = "Preview-озвучка готова. Полный режим использует твой очищенный голосовой профиль."
+
+    st.markdown(f"<span class='ok'>✅ {html.escape(st.session_state.last_action)}</span>", unsafe_allow_html=True)
+
+    final_text = st.text_area("Готовый текст / сценарий", value=st.session_state.final_text, height=180)
+    st.session_state.final_text = final_text
+
+    if mode == "Видео → готовое видео с озвучкой":
+        st.markdown("### Финальное видео")
+        show_media(st.session_state.source_media)
+        st.caption("В preview справа показывается исходное видео как место финального результата. На VPS здесь будет готовый MP4 с новой озвучкой.")
+        speech_button(final_text or source_text, tgt_lang, voice)
+    elif mode == "Текст → озвучка":
+        st.markdown("### Готовая озвучка")
+        speech_button(final_text or source_text, tgt_lang, voice)
+    elif mode == "Текст → готовый перевод":
+        st.markdown("### Готовый перевод")
+        st.download_button("Скачать перевод TXT", data=(final_text or "").encode("utf-8"), file_name="murat-ai-translation.txt")
+        st.download_button("Скачать субтитры SRT", data=make_srt(final_text or "").encode("utf-8"), file_name="murat-ai-subtitles.srt")
+    else:
+        st.markdown("### Готовый очищенный голос / озвучка моим голосом")
+        if st.session_state.clean_voice_ready:
+            st.markdown("<span class='ok'>✅ Голос очищен: шум, эхо и громкость обработаны в полном режиме.</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("<span class='warn'>⚠️ Сначала загрузи голос слева и нажми «Обработать мой голос».</span>", unsafe_allow_html=True)
+        speech_button(final_text or source_text, tgt_lang, "Мой загруженный голос")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("---")
+with st.expander("📚 Замена слов — чтобы Murat AI каждый раз исправлял нужное слово"):
     d1, d2, d3 = st.columns([1, 1, 1])
-    word_from = d1.text_input(t("word_from"))
-    word_to = d2.text_input(t("word_to"))
-    scope = d3.selectbox(t("scope"), ["Глобально", active_channel])
-    if st.button(t("save"), type="primary"):
+    word_from = d1.text_input("Какое слово искать")
+    word_to = d2.text_input("На что заменить")
+    scope = d3.selectbox("Где применять", ["Глобально", "Текущий канал"])
+    if st.button("Сохранить замену"):
         if word_from.strip() and word_to.strip():
             st.session_state.dictionary_rules.append({"from": word_from.strip(), "to": word_to.strip(), "scope": scope})
             st.success(f"Правило сохранено: {word_from} → {word_to}")
@@ -489,20 +328,14 @@ with tab_dictionary:
     if st.session_state.dictionary_rules:
         st.dataframe(st.session_state.dictionary_rules, use_container_width=True)
 
-with tab_export:
-    st.header(t("export_title"))
-    st.write(t("export_help"))
-    final_text = st.session_state.translation_text or "Murat AI preview"
-    st.download_button(t("download_text"), data=final_text.encode("utf-8"), file_name="murat-ai-translation.txt")
-    st.download_button(t("download_srt"), data=make_srt(final_text).encode("utf-8"), file_name="murat-ai-subtitles.srt")
-    platforms = st.multiselect(t("platforms"), PLATFORMS, default=["YouTube", "TikTok", "Скачать на компьютер"])
-    if st.button(t("package"), type="primary"):
-        st.json({
-            "platforms": platforms,
-            "created_at": datetime.utcnow().isoformat(),
-            "translation": final_text,
-            "status": "preview_package_created",
-        })
+with st.expander("📦 Скачать / публикация"):
+    platforms = st.multiselect("Куда готовить результат", ["YouTube", "TikTok", "Instagram", "Facebook", "Telegram", "X", "Скачать на компьютер"], default=["Скачать на компьютер"])
+    package = {
+        "platforms": platforms,
+        "created_at": datetime.utcnow().isoformat(),
+        "text": st.session_state.final_text,
+        "mode": mode,
+    }
+    st.download_button("Скачать пакет JSON", data=json.dumps(package, ensure_ascii=False, indent=2).encode("utf-8"), file_name="murat-ai-package.json")
 
-st.markdown("---")
-st.caption("Murat AI · streamlit-preview. Реальный AI-рендер видео запускается только на VPS/GPU backend.")
+st.caption("Murat AI preview: слева вход, справа результат. Реальный MP4/голосовое клонирование/туркменская TTS-модель запускаются на VPS/GPU.")
