@@ -7,17 +7,27 @@ from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 
-BUILD = "issue-2-ai-architecture / studio-hotfix / 2026-05-24"
+BUILD = "screen-preview-fixed-v2 / 2026-05-24-21:30"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(page_title="Murat AI", page_icon="🌐", layout="wide", initial_sidebar_state="collapsed")
 
 LANGS = {"ru": "Русский", "tk": "Туркменский", "tr": "Турецкий", "en": "Английский"}
 FORMATS = {
-    "9:16 Shorts / Reels / TikTok": {"ratio": "9/16", "label": "9:16", "max_width": 380},
-    "16:9 YouTube": {"ratio": "16/9", "label": "16:9", "max_width": 720},
-    "1:1 Square": {"ratio": "1/1", "label": "1:1", "max_width": 520},
-    "Original": {"ratio": "16/9", "label": "Original", "max_width": 720},
+    "9:16 Shorts / Reels / TikTok": {"ratio": "9/16", "label": "9:16"},
+    "16:9 YouTube":                  {"ratio": "16/9", "label": "16:9"},
+    "1:1 Square":                    {"ratio": "1/1",  "label": "1:1"},
+    "Original":                      {"ratio": "16/9", "label": "Original"},
+}
+SCREENS = {
+    "📱 Телефон вертикальный":    {"max": 300, "kind": "phone-v", "label": "Телефон верт."},
+    "📱 Телефон горизонтальный":  {"max": 620, "kind": "phone-h", "label": "Телефон гориз."},
+    "💻 Планшет":                 {"max": 560, "kind": "tablet",  "label": "Планшет"},
+    "💻 Ноутбук":                 {"max": 760, "kind": "laptop",  "label": "Ноутбук"},
+    "🖥 Монитор 19\"":            {"max": 720, "kind": "monitor", "label": "Монитор 19″"},
+    "🖥 Монитор 24\"":            {"max": 880, "kind": "monitor", "label": "Монитор 24″"},
+    "📺 Телевизор":               {"max": 960, "kind": "tv",      "label": "Телевизор"},
+    "🟦 Без рамки":               {"max": 760, "kind": "bare",    "label": "Без рамки"},
 }
 QUALITIES = ["1080p", "4K", "8K"]
 EMOTIONS = [
@@ -136,19 +146,32 @@ def vtt(text: str) -> str:
     return "WEBVTT\n\n" + srt(text).replace(",000", ".000")
 
 
-def video_screen(fmt: dict, result: bool = False) -> None:
+def get_video_aspect(fmt: dict) -> str:
+    return fmt["ratio"]
+
+
+def get_device_frame(screen: dict):
+    return screen["kind"], screen["max"]
+
+
+def video_screen(fmt: dict, screen: dict, result: bool = False) -> None:
     label = "Здесь будет готовое видео" if result else "Здесь будет исходное видео"
-    ratio = fmt["ratio"]
-    max_width = fmt["max_width"]
+    kind, max_w = get_device_frame(screen)
+    aspect = get_video_aspect(fmt)
+    st.markdown(
+        f"<div class='device device-{kind}' style='max-width:{max_w}px'><div class='device-screen' style='aspect-ratio:{aspect}'>",
+        unsafe_allow_html=True,
+    )
     if st.session_state.video_file and (not result or st.session_state.result_ready):
         st.video(st.session_state.video_file)
     elif st.session_state.video_url and (not result or st.session_state.result_ready):
         st.video(st.session_state.video_url)
     else:
         st.markdown(
-            f"<div class='screen' style='aspect-ratio:{ratio};max-width:{max_width}px'><div>{label}<br><span>{fmt['label']}</span></div></div>",
+            f"<div class='device-empty'>{label}<br><span>{fmt['label']} · {screen['label']}</span></div>",
             unsafe_allow_html=True,
         )
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def speak_button(text: str, lang: str, voice: str, emotion: str, speed: float, pitch: float, volume: float, key: str) -> None:
@@ -214,9 +237,23 @@ st.markdown(
     .hero p {{color:#dbeafe;font-size:17px;margin:8px 0 0}}
     .card {{border-radius:24px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.12);padding:18px;margin-bottom:16px;box-shadow:0 18px 46px rgba(0,0,0,.18)}}
     .card h2 {{margin:0 0 14px;font-size:25px;color:#fff}}
-    .screen {{width:100%;margin:0 auto 14px;border-radius:28px;background:linear-gradient(180deg,#111827,#1e1b4b);border:9px solid #111827;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;color:#dbeafe;font-size:18px;font-weight:900}}
-    .screen span {{color:#a78bfa}}
     .pill {{display:inline-block;border-radius:999px;padding:6px 10px;margin:0 6px 6px 0;background:#1e293b;color:#cbd5e1;border:1px solid #334155;font-size:12px;font-weight:800}}
+    .device {{width:100%;margin:0 auto 14px;position:relative}}
+    .device-screen {{width:100%;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}}
+    .device-empty {{color:#dbeafe;font-size:16px;font-weight:900;text-align:center;padding:18px}}
+    .device-empty span {{color:#a78bfa;font-weight:700;font-size:13px}}
+    .device-phone-v .device-screen {{border:10px solid #111;border-radius:34px;background:linear-gradient(180deg,#111827,#1e1b4b);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+    .device-phone-v::before {{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:90px;height:18px;background:#000;border-radius:0 0 14px 14px;z-index:5}}
+    .device-phone-h .device-screen {{border:10px solid #111;border-radius:24px;background:linear-gradient(180deg,#111827,#1e1b4b);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+    .device-phone-h::before {{content:"";position:absolute;left:6px;top:50%;transform:translateY(-50%);width:18px;height:90px;background:#000;border-radius:14px 0 0 14px;z-index:5}}
+    .device-tablet .device-screen {{border:14px solid #1a1a1a;border-radius:22px;background:linear-gradient(180deg,#111827,#1e1b4b);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+    .device-laptop .device-screen {{border:9px solid #2b2b2b;border-top-width:22px;border-radius:14px 14px 4px 4px;background:linear-gradient(180deg,#111827,#1e1b4b);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+    .device-laptop::after {{content:"";display:block;width:100%;height:14px;background:linear-gradient(180deg,#3a3a3a,#1a1a1a);border-radius:0 0 18px 18px;margin-top:-2px;box-shadow:0 10px 24px rgba(0,0,0,.35)}}
+    .device-monitor .device-screen {{border:12px solid #1a1a1a;border-radius:8px;background:linear-gradient(180deg,#111827,#1e1b4b);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+    .device-monitor::after {{content:"";display:block;width:32%;height:18px;margin:6px auto 0;background:linear-gradient(180deg,#2b2b2b,#111);border-radius:0 0 10px 10px}}
+    .device-tv .device-screen {{border:18px solid #050505;border-radius:14px;background:linear-gradient(180deg,#0b1220,#1e1b4b);box-shadow:0 22px 60px rgba(0,0,0,.55)}}
+    .device-tv::after {{content:"";display:block;width:24%;height:8px;margin:8px auto 0;background:#222;border-radius:6px}}
+    .device-bare .device-screen {{border-radius:14px;background:#000;box-shadow:0 12px 32px rgba(0,0,0,.35)}}
     .voice-card {{border:1px solid #334155;background:#0f172a;border-radius:18px;padding:14px;margin-bottom:10px}}
     .voice-title {{font-weight:900;color:#fff;font-size:16px;margin-bottom:6px}}
     .sub {{color:#94a3b8;font-size:13px}}
@@ -229,14 +266,16 @@ st.markdown(
 )
 
 st.markdown("<div class='card'><h2>⚙️ Настройки проекта</h2>", unsafe_allow_html=True)
-r1 = st.columns(6)
-fmt_name = r1[0].selectbox("Формат видео", list(FORMATS.keys()))
-quality = r1[1].selectbox("Качество", QUALITIES, index=1)
-src_lang = r1[2].selectbox("С языка", list(LANGS.keys()), format_func=lambda c: LANGS[c])
-dst_lang = r1[3].selectbox("На язык", list(LANGS.keys()), index=1, format_func=lambda c: LANGS[c])
+r0 = st.columns(2)
+fmt_name = r0[0].selectbox("🎬 ФОРМАТ ВИДЕО (соотношение сторон)", list(FORMATS.keys()))
+screen_name = r0[1].selectbox("🖥 ЭКРАН ПРОСМОТРА (устройство-рамка)", list(SCREENS.keys()), index=4)
+r1 = st.columns(5)
+quality = r1[0].selectbox("Качество", QUALITIES, index=1)
+src_lang = r1[1].selectbox("С языка", list(LANGS.keys()), format_func=lambda c: LANGS[c])
+dst_lang = r1[2].selectbox("На язык", list(LANGS.keys()), index=1, format_func=lambda c: LANGS[c])
 voice_names = [v["name"] for v in VOICE_CATALOG]
-st.session_state.selected_voice = r1[4].selectbox("Голосовой профиль", voice_names, index=voice_names.index(st.session_state.selected_voice) if st.session_state.selected_voice in voice_names else 0)
-emotion_mode = r1[5].selectbox("Эмоция", EMOTIONS)
+st.session_state.selected_voice = r1[3].selectbox("Голосовой профиль", voice_names, index=voice_names.index(st.session_state.selected_voice) if st.session_state.selected_voice in voice_names else 0)
+emotion_mode = r1[4].selectbox("Эмоция", EMOTIONS)
 r2 = st.columns(6)
 speed = r2[0].slider("Темп", 0.6, 1.6, 1.0, 0.05)
 pitch = r2[1].slider("Высота", 0.6, 1.6, 1.0, 0.05)
@@ -244,15 +283,20 @@ volume = r2[2].slider("Громкость", 0.1, 1.0, 1.0, 0.05)
 r2[3].checkbox("Подогнать под тайминг", True)
 r2[4].checkbox("Очистить шум / эхо", True)
 r2[5].checkbox("Сохранить качество", True)
+fmt = FORMATS[fmt_name]
+screen = SCREENS[screen_name]
+st.markdown(
+    f"<span class='pill'>Формат видео: {fmt['label']}</span><span class='pill'>Экран просмотра: {screen['label']}</span>",
+    unsafe_allow_html=True,
+)
 st.markdown("</div>", unsafe_allow_html=True)
 
-fmt = FORMATS[fmt_name]
 active_emotion = st.session_state.analysis["emotion"] if emotion_mode == "Автоматически по оригиналу" else emotion_mode
 
 left, right = st.columns(2, gap="large")
 with left:
     st.markdown("<div class='card'><h2>📥 Исходное видео</h2>", unsafe_allow_html=True)
-    video_screen(fmt, result=False)
+    video_screen(fmt, screen, result=False)
     st.session_state.video_url = st.text_input("Вставить ссылку на видео", value=st.session_state.video_url, placeholder="YouTube / Shorts / прямая mp4-ссылка")
     c1, c2 = st.columns(2)
     if c1.button("Показать видео", type="primary", use_container_width=True):
@@ -277,8 +321,8 @@ with right:
         st.session_state.result_text = translate_text(st.session_state.source_text, src_lang, dst_lang)
         st.session_state.result_ready = True
         st.rerun()
-    video_screen(fmt, result=True)
-    st.markdown(f"<span class='pill'>{fmt['label']}</span><span class='pill'>{quality}</span><span class='pill'>{LANGS[dst_lang]}</span><span class='pill'>{st.session_state.selected_voice}</span><span class='pill'>{active_emotion}</span>", unsafe_allow_html=True)
+    video_screen(fmt, screen, result=True)
+    st.markdown(f"<span class='pill'>{fmt['label']}</span><span class='pill'>{screen['label']}</span><span class='pill'>{quality}</span><span class='pill'>{LANGS[dst_lang]}</span><span class='pill'>{st.session_state.selected_voice}</span><span class='pill'>{active_emotion}</span>", unsafe_allow_html=True)
     d1, d2 = st.columns(2)
     d1.download_button("Скачать MP4", data=b"MP4 preview placeholder", file_name="murat-ai-final.mp4", disabled=not st.session_state.result_ready, use_container_width=True)
     d2.download_button("Скачать MP4 + SRT", data=srt(st.session_state.result_text).encode(), file_name="murat-ai-final-with-srt.txt", disabled=not st.session_state.result_ready, use_container_width=True)
