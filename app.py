@@ -1,8 +1,9 @@
 """Murat AI — Streamlit Cloud preview.
 
-Self-contained preview UI for Murat AI. It avoids heavy AI imports so the
-browser preview stays stable, while showing the intended translation, dubbing,
-subtitle fitting, voice and publishing workflow.
+Self-contained professional preview UI for Murat AI. Heavy AI imports are not
+used here, so the browser preview stays stable while showing the intended
+translation, dubbing, voice cloning, avatar, actor voice mapping and export
+workflow.
 """
 
 from __future__ import annotations
@@ -24,20 +25,20 @@ LANGS = ["ru", "tk", "tr", "en"]
 
 I18N = {
     "ru": {
-        "brand_subtitle": "Перевод, озвучка и видеодубляж для русского, туркменского, турецкого и английского языков",
-        "preview_notice": "Это preview-режим Streamlit. Здесь можно проверить интерфейс, дизайн и логику. Тяжёлые AI-модели отключены, чтобы сайт не падал.",
+        "subtitle": "Профессиональный AI-перевод, озвучка, аватары и видеодубляж для 4 языков",
+        "notice": "Preview-режим: здесь показывается интерфейс и рабочая логика. Полные AI-модели запускаются на VPS/self-hosted.",
         "interface_language": "Язык интерфейса",
         "channel_agent": "Канал / AI-агент",
-        "preview_online": "Preview-режим: интерфейс работает",
-        "full_ai": "Полная AI-модель: VPS/self-hosted",
+        "online": "Preview работает",
+        "full_ai": "Полная нейронка: VPS/self-hosted",
         "tab_translate": "✨ Перевод",
-        "tab_media": "🎬 Видео / аудио",
+        "tab_studio": "🎬 Dubbing Studio",
+        "tab_voice": "🎙️ Голос / аватар",
         "tab_dictionary": "📚 Словарь",
         "tab_memory": "🧠 Память",
-        "tab_channels": "🤖 Каналы",
-        "tab_voices": "🎙️ Голоса",
+        "tab_export": "📦 Экспорт",
         "tab_publish": "📤 Публикация",
-        "text_preview": "✨ Перевод текста",
+        "translate_title": "✨ Перевод текста",
         "from": "С языка",
         "to": "На язык",
         "voice": "Голос",
@@ -47,62 +48,78 @@ I18N = {
         "text": "Текст",
         "translate": "Перевести",
         "result": "Результат",
-        "video_workspace": "🎬 Видео-дубляж и синхронный перевод",
-        "video_left": "1. Исходное видео / аудио",
-        "video_right": "2. Переведённый текст и синхронизация",
-        "upload_hint": "Перетащи сюда видео или аудио",
+        "studio_title": "🎬 Профессиональная студия дубляжа",
+        "studio_hint": "Загрузи видео/аудио или вставь ссылку. Справа появится перевод, тайминг, голоса актёров и подготовка финального видео.",
+        "source_box": "Источник",
+        "upload_video": "Загрузить видео или аудио",
+        "video_url": "Или вставить ссылку на видео",
+        "download_source": "Скачать видео по ссылке",
+        "pipeline": "Pipeline",
         "target_language": "Целевой язык",
-        "source_auto": "Исходный язык: автоопределение",
-        "fit_settings": "Настройки подгонки текста под время",
-        "max_chars": "Макс. символов в строке субтитра",
+        "cinema_level": "Уровень озвучки",
+        "sync_mode": "Синхронизация",
+        "max_chars": "Макс. символов в строке",
         "max_lines": "Макс. строк на экран",
-        "sync_mode": "Режим синхронизации",
-        "sync_soft": "Мягко: естественная речь",
-        "sync_strict": "Строго: точное попадание во время",
-        "sync_cinematic": "Кино: паузы + эмоции",
-        "generate_preview": "Сгенерировать preview-перевод",
-        "translated_script": "Готовый переведённый текст",
+        "generate_script": "Сгенерировать перевод и тайминг",
+        "translated_text": "Готовый переведённый текст",
+        "actor_map": "Актёры и голоса",
+        "actor": "Актёр",
+        "role": "Роль",
+        "assigned_voice": "Назначенный голос",
+        "voice_type": "Тип голоса",
+        "quality": "Качество",
         "segments": "Сегменты дубляжа",
-        "sync_status": "Статус синхронизации",
-        "sync_ok": "Текст помещается в заданные интервалы. В полной версии AI будет автоматически укорачивать, делить и подгонять фразы под длительность речи.",
-        "dict_title": "📚 Личный словарь / замена слов",
-        "dict_desc": "Здесь будут правила: какое слово всегда переводить именно так, глобально или только для выбранного канала.",
+        "fit_status": "Статус подгонки",
+        "fit_ok": "AI должен автоматически сокращать, делить фразы, добавлять паузы и подгонять озвучку под тайминг видео.",
+        "voice_title": "🎙️ Свой голос и AI-аватар",
+        "voice_hint": "Пользователь может загрузить чистый образец голоса или видеозапись. Система должна очистить шум, проверить качество и создать профессиональный голосовой профиль.",
+        "voice_sample": "Загрузить образец голоса",
+        "video_sample": "Загрузить видео с лицом/голосом для аватара",
+        "avatar_name": "Имя аватара / голоса",
+        "consent": "Я подтверждаю согласие на использование этого голоса/видео",
+        "noise_clean": "Очистка шума",
+        "normalize": "Нормализация громкости",
+        "remove_echo": "Удаление эха",
+        "quality_check": "Проверка качества",
+        "create_voice": "Создать голосовой профиль",
+        "avatar_preview": "Preview аватара",
+        "export_title": "📦 Готовое видео и файлы для скачивания",
+        "export_hint": "После обработки здесь появится финальное видео с дубляжом, субтитры, аудиодорожки и ZIP-пакет.",
+        "final_video": "Финальное видео",
+        "download_video": "Скачать готовое видео",
+        "download_zip": "Скачать ZIP-пакет",
+        "subtitle_file": "Скачать субтитры SRT",
+        "audio_tracks": "Скачать аудиодорожки",
+        "dictionary_title": "📚 Личный словарь / замена слов",
+        "dictionary_hint": "Слова и фразы, которые Murat AI всегда должен переводить выбранным способом.",
         "source_word": "Исходное слово",
         "preferred_translation": "Нужный перевод",
         "scope": "Область",
-        "global": "Глобально",
-        "current_channel": "Только текущий канал",
         "save_rule": "Сохранить правило",
         "memory_title": "🧠 Память переводов",
-        "memory_desc": "Повторяющиеся фразы будут запоминаться отдельно для каждого канала/AI-агента.",
-        "channels_title": "🤖 Каналы / AI-агенты",
-        "channels_desc": "У каждого канала может быть свой стиль, тон, голос, словарь и память переводов.",
-        "voices_title": "🎙️ Голосовые профили",
-        "voices_desc": "Каталог голосов. В полной версии можно подключить TTS и пользовательские голоса.",
-        "upload_voice": "Загрузить образец своего голоса",
-        "voice_notice": "Клонирование голоса требует согласия и настройки полного VPS/provider-режима.",
-        "publish_title": "📤 Пакеты публикации",
-        "publish_desc": "Подготовка названия, описания, тегов и пакета для YouTube/TikTok/etc.",
+        "memory_hint": "Повторяющиеся фразы будут запоминаться отдельно для каждого канала/AI-агента.",
+        "publish_title": "📤 Публикация на платформы",
+        "publish_hint": "Выбери платформы, подготовь название, описание, теги и скачай пакет публикации или отправь через API в полной версии.",
         "video_title": "Название видео",
         "description": "Описание",
         "platforms": "Платформы",
         "create_package": "Создать пакет публикации",
     },
     "tk": {
-        "brand_subtitle": "Rus, türkmen, türk we iňlis dilleri üçin terjime, seslendirme we wideo dubляž",
-        "preview_notice": "Bu Streamlit preview tertibi. Bu ýerde interfeýsi, dizaýny we logikany görüp bolýar. Agyr AI modeller öçürilen.",
+        "subtitle": "4 dil üçin professional AI terjime, seslendirme, awatar we wideo dubляž",
+        "notice": "Preview tertibi: interfeýs we iş logikasy görkezilýär. Doly AI modeller VPS/self-hosted-de işleýär.",
         "interface_language": "Interfeýs dili",
         "channel_agent": "Kanal / AI-agent",
-        "preview_online": "Preview tertibi: interfeýs işleýär",
-        "full_ai": "Doly AI modeli: VPS/self-hosted",
+        "online": "Preview işleýär",
+        "full_ai": "Doly AI: VPS/self-hosted",
         "tab_translate": "✨ Terjime",
-        "tab_media": "🎬 Wideo / audio",
+        "tab_studio": "🎬 Dubbing Studio",
+        "tab_voice": "🎙️ Ses / awatar",
         "tab_dictionary": "📚 Sözlük",
         "tab_memory": "🧠 Ýat",
-        "tab_channels": "🤖 Kanallar",
-        "tab_voices": "🎙️ Sesler",
+        "tab_export": "📦 Eksport",
         "tab_publish": "📤 Neşir",
-        "text_preview": "✨ Tekst terjimesi",
+        "translate_title": "✨ Tekst terjimesi",
         "from": "Haýsy dilden",
         "to": "Haýsy dile",
         "voice": "Ses",
@@ -112,62 +129,78 @@ I18N = {
         "text": "Tekst",
         "translate": "Terjime et",
         "result": "Netije",
-        "video_workspace": "🎬 Wideo dubляž we sinhron terjime",
-        "video_left": "1. Asyl wideo / audio",
-        "video_right": "2. Terjime edilen tekst we sinhronlama",
-        "upload_hint": "Wideo ýa-da audio faýly şu ýere goý",
+        "studio_title": "🎬 Professional dubляž studiýasy",
+        "studio_hint": "Wideo/audio ýükle ýa-da link goý. Sagda terjime, timing, aktýor sesleri we final wideo taýýarlygy peýda bolar.",
+        "source_box": "Çeşme",
+        "upload_video": "Wideo ýa-da audio ýükle",
+        "video_url": "Ýa-da wideo linkini goý",
+        "download_source": "Linkden wideo almak",
+        "pipeline": "Pipeline",
         "target_language": "Maksat dil",
-        "source_auto": "Çeşme dili: awtomatiki kesgitlenýär",
-        "fit_settings": "Teksti wagta ýerleşdirmek sazlamalary",
-        "max_chars": "Subtitr setirindäki iň köp nyşan",
+        "cinema_level": "Seslendirme derejesi",
+        "sync_mode": "Sinhronlama",
+        "max_chars": "Setirde iň köp nyşan",
         "max_lines": "Ekranda iň köp setir",
-        "sync_mode": "Sinhronlama tertibi",
-        "sync_soft": "Ýumşak: tebigy sözleýiş",
-        "sync_strict": "Takyk: wagta berk gabat getirmek",
-        "sync_cinematic": "Kino: pauza + duýgy",
-        "generate_preview": "Preview terjime döret",
-        "translated_script": "Taýýar terjime edilen tekst",
+        "generate_script": "Terjime we timing döret",
+        "translated_text": "Taýýar terjime tekst",
+        "actor_map": "Aktýorlar we sesler",
+        "actor": "Aktýor",
+        "role": "Rol",
+        "assigned_voice": "Bellenen ses",
+        "voice_type": "Ses görnüşi",
+        "quality": "Hil",
         "segments": "Dubляž segmentleri",
-        "sync_status": "Sinhron ýagdaýy",
-        "sync_ok": "Tekst wagt aralyklaryna ýerleşýär. Doly görnüşde AI sözleri awtomatiki gysgaldar, böler we sesiň wagtyna görä sazlar.",
-        "dict_title": "📚 Şahsy sözlük / söz çalyşma",
-        "dict_desc": "Bu ýerde sözleriň hemişe nähili terjime edilmelidigi saklanar.",
+        "fit_status": "Ýerleşiş ýagdaýy",
+        "fit_ok": "AI sözlemleri awtomatiki gysgaltmaly, bölmeli, pauza goşmaly we seslendirmäni wideo timingine gabat getirmeli.",
+        "voice_title": "🎙️ Öz sesiň we AI-awatar",
+        "voice_hint": "Ulanyjy arassa ses nusgasyny ýa-da wideo ýazgyny ýükläp biler. Sistema şumy arassalamaly, hili barlamaly we professional ses profilini döretmeli.",
+        "voice_sample": "Ses nusgasyny ýükle",
+        "video_sample": "Awatar üçin ýüz/ses wideosyny ýükle",
+        "avatar_name": "Awatar / ses ady",
+        "consent": "Bu ses/wideony ulanmaga razylyk berýärin",
+        "noise_clean": "Şumy arassalamak",
+        "normalize": "Ses derejesini deňlemek",
+        "remove_echo": "Eho aýyrmak",
+        "quality_check": "Hil barlagy",
+        "create_voice": "Ses profilini döret",
+        "avatar_preview": "Awatar preview",
+        "export_title": "📦 Taýýar wideo we ýükleme faýllary",
+        "export_hint": "Işlenenden soň bu ýerde final dubляž wideo, subtitrler, audio trackler we ZIP paket peýda bolar.",
+        "final_video": "Final wideo",
+        "download_video": "Taýýar wideony ýükle",
+        "download_zip": "ZIP paket ýükle",
+        "subtitle_file": "SRT subtitr ýükle",
+        "audio_tracks": "Audio trackleri ýükle",
+        "dictionary_title": "📚 Şahsy sözlük / söz çalyşma",
+        "dictionary_hint": "Murat AI hemişe saýlanan görnüşde terjime etmeli sözler.",
         "source_word": "Çeşme söz",
         "preferred_translation": "Islenýän terjime",
-        "scope": "Ulanylyş çägi",
-        "global": "Global",
-        "current_channel": "Diňe şu kanal",
+        "scope": "Çäk",
         "save_rule": "Düzgüni sakla",
         "memory_title": "🧠 Terjime ýady",
-        "memory_desc": "Gaýtalanýan sözlemler her kanal üçin aýratyn ýatda saklanar.",
-        "channels_title": "🤖 Kanallar / AI-agentler",
-        "channels_desc": "Her kanalyň öz stili, äheňi, sesi, sözlügi we ýady bolup biler.",
-        "voices_title": "🎙️ Ses profilleri",
-        "voices_desc": "Ses katalogy. Doly görnüşde TTS we şahsy sesler birikdiriler.",
-        "upload_voice": "Öz ses nusgaňy ýükle",
-        "voice_notice": "Ses klonlamak razylyk we doly VPS/provider sazlamasyny talap edýär.",
-        "publish_title": "📤 Neşir paketleri",
-        "publish_desc": "YouTube/TikTok/etc üçin at, düşündiriş, taglar we paket taýýarlamak.",
+        "memory_hint": "Gaýtalanýan sözlemler her kanal üçin aýratyn saklanar.",
+        "publish_title": "📤 Platformalara neşir",
+        "publish_hint": "Platformalary saýla, at/düşündiriş/tag taýýarla we paket ýükle ýa-da doly görnüşde API arkaly iber.",
         "video_title": "Wideo ady",
         "description": "Düşündiriş",
         "platforms": "Platformalar",
         "create_package": "Neşir paketini döret",
     },
     "tr": {
-        "brand_subtitle": "Rusça, Türkmence, Türkçe ve İngilizce için çeviri, seslendirme ve video dublaj",
-        "preview_notice": "Bu Streamlit önizleme modudur. Burada arayüz, tasarım ve mantık kontrol edilir. Ağır AI modeller kapalıdır.",
+        "subtitle": "4 dil için profesyonel AI çeviri, seslendirme, avatar ve video dublaj",
+        "notice": "Preview modu: arayüz ve iş akışı gösterilir. Tam AI modeller VPS/self-hosted çalışır.",
         "interface_language": "Arayüz dili",
         "channel_agent": "Kanal / AI ajanı",
-        "preview_online": "Önizleme modu: arayüz çalışıyor",
-        "full_ai": "Tam AI modeli: VPS/self-hosted",
+        "online": "Preview çalışıyor",
+        "full_ai": "Tam AI: VPS/self-hosted",
         "tab_translate": "✨ Çeviri",
-        "tab_media": "🎬 Video / ses",
+        "tab_studio": "🎬 Dubbing Studio",
+        "tab_voice": "🎙️ Ses / avatar",
         "tab_dictionary": "📚 Sözlük",
         "tab_memory": "🧠 Hafıza",
-        "tab_channels": "🤖 Kanallar",
-        "tab_voices": "🎙️ Sesler",
+        "tab_export": "📦 Dışa aktar",
         "tab_publish": "📤 Yayın",
-        "text_preview": "✨ Metin çevirisi",
+        "translate_title": "✨ Metin çevirisi",
         "from": "Kaynak dil",
         "to": "Hedef dil",
         "voice": "Ses",
@@ -177,62 +210,78 @@ I18N = {
         "text": "Metin",
         "translate": "Çevir",
         "result": "Sonuç",
-        "video_workspace": "🎬 Video dublaj ve senkron çeviri",
-        "video_left": "1. Orijinal video / ses",
-        "video_right": "2. Çevrilmiş metin ve senkronizasyon",
-        "upload_hint": "Video veya ses dosyasını buraya bırak",
+        "studio_title": "🎬 Profesyonel dublaj stüdyosu",
+        "studio_hint": "Video/ses yükle veya link ekle. Sağda çeviri, zamanlama, oyuncu sesleri ve final video hazırlığı görünür.",
+        "source_box": "Kaynak",
+        "upload_video": "Video veya ses yükle",
+        "video_url": "Veya video linki ekle",
+        "download_source": "Linkten video al",
+        "pipeline": "Pipeline",
         "target_language": "Hedef dil",
-        "source_auto": "Kaynak dil: otomatik algılama",
-        "fit_settings": "Metni zamana sığdırma ayarları",
-        "max_chars": "Altyazı satırında maksimum karakter",
-        "max_lines": "Ekranda maksimum satır",
-        "sync_mode": "Senkron modu",
-        "sync_soft": "Yumuşak: doğal konuşma",
-        "sync_strict": "Sıkı: zamana tam uyum",
-        "sync_cinematic": "Sinema: duraklama + duygu",
-        "generate_preview": "Önizleme çevirisi oluştur",
-        "translated_script": "Hazır çevrilmiş metin",
+        "cinema_level": "Seslendirme seviyesi",
+        "sync_mode": "Senkronizasyon",
+        "max_chars": "Satır başına maks. karakter",
+        "max_lines": "Ekranda maks. satır",
+        "generate_script": "Çeviri ve zamanlama oluştur",
+        "translated_text": "Hazır çevrilmiş metin",
+        "actor_map": "Oyuncular ve sesler",
+        "actor": "Oyuncu",
+        "role": "Rol",
+        "assigned_voice": "Atanan ses",
+        "voice_type": "Ses tipi",
+        "quality": "Kalite",
         "segments": "Dublaj segmentleri",
-        "sync_status": "Senkron durumu",
-        "sync_ok": "Metin zaman aralıklarına sığıyor. Tam sürümde AI cümleleri otomatik kısaltır, böler ve ses süresine göre ayarlar.",
-        "dict_title": "📚 Kişisel sözlük / kelime değiştirme",
-        "dict_desc": "Burada kelimelerin her zaman nasıl çevrileceği saklanır.",
+        "fit_status": "Uyum durumu",
+        "fit_ok": "AI cümleleri otomatik kısaltmalı, bölmeli, duraklama eklemeli ve sesi video zamanına uydurmalıdır.",
+        "voice_title": "🎙️ Kendi sesin ve AI-avatar",
+        "voice_hint": "Kullanıcı temiz ses örneği veya video yükleyebilir. Sistem gürültüyü temizler, kaliteyi kontrol eder ve profesyonel ses profili oluşturur.",
+        "voice_sample": "Ses örneği yükle",
+        "video_sample": "Avatar için yüz/ses videosu yükle",
+        "avatar_name": "Avatar / ses adı",
+        "consent": "Bu ses/video kullanımına izin veriyorum",
+        "noise_clean": "Gürültü temizleme",
+        "normalize": "Ses normalizasyonu",
+        "remove_echo": "Yankı kaldırma",
+        "quality_check": "Kalite kontrolü",
+        "create_voice": "Ses profili oluştur",
+        "avatar_preview": "Avatar preview",
+        "export_title": "📦 Hazır video ve indirilecek dosyalar",
+        "export_hint": "İşlemden sonra final dublaj video, altyazılar, ses kanalları ve ZIP paket burada görünür.",
+        "final_video": "Final video",
+        "download_video": "Hazır videoyu indir",
+        "download_zip": "ZIP paket indir",
+        "subtitle_file": "SRT altyazı indir",
+        "audio_tracks": "Ses kanallarını indir",
+        "dictionary_title": "📚 Kişisel sözlük / kelime değiştirme",
+        "dictionary_hint": "Murat AI'nin her zaman seçilen şekilde çevirmesi gereken kelimeler.",
         "source_word": "Kaynak kelime",
         "preferred_translation": "Tercih edilen çeviri",
         "scope": "Kapsam",
-        "global": "Genel",
-        "current_channel": "Sadece bu kanal",
         "save_rule": "Kuralı kaydet",
         "memory_title": "🧠 Çeviri hafızası",
-        "memory_desc": "Tekrarlanan ifadeler her kanal için ayrı saklanır.",
-        "channels_title": "🤖 Kanallar / AI ajanları",
-        "channels_desc": "Her kanalın kendi stili, tonu, sesi, sözlüğü ve hafızası olabilir.",
-        "voices_title": "🎙️ Ses profilleri",
-        "voices_desc": "Ses kataloğu. Tam sürümde TTS ve özel sesler bağlanır.",
-        "upload_voice": "Kendi ses örneğini yükle",
-        "voice_notice": "Ses klonlama izin ve tam VPS/provider kurulumu gerektirir.",
-        "publish_title": "📤 Yayın paketleri",
-        "publish_desc": "YouTube/TikTok/etc için başlık, açıklama, etiket ve paket hazırlama.",
+        "memory_hint": "Tekrarlanan ifadeler her kanal için ayrı saklanır.",
+        "publish_title": "📤 Platformlara yayın",
+        "publish_hint": "Platform seç, başlık/açıklama/tag hazırla ve paket indir veya tam sürümde API ile gönder.",
         "video_title": "Video başlığı",
         "description": "Açıklama",
         "platforms": "Platformlar",
         "create_package": "Yayın paketi oluştur",
     },
     "en": {
-        "brand_subtitle": "Translator, voiceover and video dubbing for Russian, Turkmen, Turkish and English",
-        "preview_notice": "This is a Streamlit preview. You can check the interface, design and workflow. Heavy AI models are disabled so the site does not crash.",
+        "subtitle": "Professional AI translation, voiceover, avatars and video dubbing for 4 languages",
+        "notice": "Preview mode: this shows the interface and workflow. Full AI models run on VPS/self-hosted.",
         "interface_language": "Interface language",
         "channel_agent": "Channel / AI agent",
-        "preview_online": "Preview mode: UI is online",
-        "full_ai": "Full AI model: VPS/self-hosted",
+        "online": "Preview is online",
+        "full_ai": "Full neural engine: VPS/self-hosted",
         "tab_translate": "✨ Translate",
-        "tab_media": "🎬 Video / audio",
+        "tab_studio": "🎬 Dubbing Studio",
+        "tab_voice": "🎙️ Voice / avatar",
         "tab_dictionary": "📚 Dictionary",
         "tab_memory": "🧠 Memory",
-        "tab_channels": "🤖 Channels",
-        "tab_voices": "🎙️ Voices",
+        "tab_export": "📦 Export",
         "tab_publish": "📤 Publish",
-        "text_preview": "✨ Text translation",
+        "translate_title": "✨ Text translation",
         "from": "From",
         "to": "To",
         "voice": "Voice",
@@ -242,42 +291,58 @@ I18N = {
         "text": "Text",
         "translate": "Translate",
         "result": "Result",
-        "video_workspace": "🎬 Video dubbing and synchronized translation",
-        "video_left": "1. Source video / audio",
-        "video_right": "2. Translated text and synchronization",
-        "upload_hint": "Drop video or audio here",
+        "studio_title": "🎬 Professional dubbing studio",
+        "studio_hint": "Upload video/audio or paste a link. Translation, timing, actor voices and final video preparation appear on the right.",
+        "source_box": "Source",
+        "upload_video": "Upload video or audio",
+        "video_url": "Or paste video URL",
+        "download_source": "Download video from URL",
+        "pipeline": "Pipeline",
         "target_language": "Target language",
-        "source_auto": "Source language: auto-detect",
-        "fit_settings": "Text fitting settings",
-        "max_chars": "Max characters per subtitle line",
+        "cinema_level": "Voiceover level",
+        "sync_mode": "Synchronization",
+        "max_chars": "Max characters per line",
         "max_lines": "Max lines on screen",
-        "sync_mode": "Sync mode",
-        "sync_soft": "Soft: natural speech",
-        "sync_strict": "Strict: exact timing",
-        "sync_cinematic": "Cinema: pauses + emotion",
-        "generate_preview": "Generate preview translation",
-        "translated_script": "Final translated text",
+        "generate_script": "Generate translation and timing",
+        "translated_text": "Final translated text",
+        "actor_map": "Actors and voices",
+        "actor": "Actor",
+        "role": "Role",
+        "assigned_voice": "Assigned voice",
+        "voice_type": "Voice type",
+        "quality": "Quality",
         "segments": "Dubbing segments",
-        "sync_status": "Synchronization status",
-        "sync_ok": "Text fits the timing windows. In full mode AI will automatically shorten, split and fit phrases to speech duration.",
-        "dict_title": "📚 Personal dictionary / word replacement",
-        "dict_desc": "Rules for words that must always be translated your chosen way.",
+        "fit_status": "Fit status",
+        "fit_ok": "AI must automatically shorten, split phrases, add pauses and fit voiceover to video timing.",
+        "voice_title": "🎙️ Custom voice and AI avatar",
+        "voice_hint": "Users can upload a clean voice sample or video recording. The system should remove noise, check quality and create a professional voice profile.",
+        "voice_sample": "Upload voice sample",
+        "video_sample": "Upload face/voice video for avatar",
+        "avatar_name": "Avatar / voice name",
+        "consent": "I confirm consent to use this voice/video",
+        "noise_clean": "Noise cleanup",
+        "normalize": "Loudness normalization",
+        "remove_echo": "Echo removal",
+        "quality_check": "Quality check",
+        "create_voice": "Create voice profile",
+        "avatar_preview": "Avatar preview",
+        "export_title": "📦 Final video and downloads",
+        "export_hint": "After processing, final dubbed video, subtitles, audio tracks and a ZIP package appear here.",
+        "final_video": "Final video",
+        "download_video": "Download final video",
+        "download_zip": "Download ZIP package",
+        "subtitle_file": "Download SRT subtitles",
+        "audio_tracks": "Download audio tracks",
+        "dictionary_title": "📚 Personal dictionary / word replacement",
+        "dictionary_hint": "Words and phrases Murat AI must always translate your chosen way.",
         "source_word": "Source word",
         "preferred_translation": "Preferred translation",
         "scope": "Scope",
-        "global": "Global",
-        "current_channel": "Only current channel",
         "save_rule": "Save rule",
         "memory_title": "🧠 Translation memory",
-        "memory_desc": "Repeated phrases will be remembered per channel/AI agent.",
-        "channels_title": "🤖 Channels / AI agents",
-        "channels_desc": "Each channel can have its own style, tone, voice, dictionary and translation memory.",
-        "voices_title": "🎙️ Voice profiles",
-        "voices_desc": "Voice catalog. Full mode can connect TTS and custom voices.",
-        "upload_voice": "Upload custom voice sample",
-        "voice_notice": "Voice cloning requires consent and full VPS/provider configuration.",
-        "publish_title": "📤 Publishing packages",
-        "publish_desc": "Prepare title, description, tags and upload packages for YouTube/TikTok/etc.",
+        "memory_hint": "Repeated phrases will be remembered separately for each channel/AI agent.",
+        "publish_title": "📤 Publish to platforms",
+        "publish_hint": "Select platforms, prepare title, description, tags and download package or send via API in full mode.",
         "video_title": "Video title",
         "description": "Description",
         "platforms": "Platforms",
@@ -288,16 +353,19 @@ I18N = {
 STYLES = ["natural", "blogger", "conversational", "street", "literary", "formal", "news", "cultural", "expressive", "dramatic", "children", "teen", "humorous", "advertising", "expert"]
 TONES = ["calm", "confident", "friendly", "warm", "serious", "cheerful", "energetic", "respectful", "soft", "firm", "cultural", "modern", "traditional", "simple", "deep", "emotional"]
 EMOTIONS = ["neutral", "happy", "sad", "serious", "excited", "respectful", "warm"]
-VOICE_PROFILES = ["tm_male_narrator", "tm_female_clear", "tm_child_soft", "tm_teen_blogger", "ru_male_documentary", "ru_female_blog", "tr_male_confident", "tr_female_warm", "en_male_news", "en_female_natural"]
+VOICE_LEVELS = ["Clean studio", "Blog / natural", "Cinema", "Documentary", "Cartoon", "News", "Commercial"]
+SYNC_MODES = ["Soft natural", "Strict timing", "Cinematic pauses", "Subtitle first", "Voice first"]
+VOICE_PROFILES = ["tm_male_narrator", "tm_female_clear", "tm_child_soft", "tm_teen_blogger", "ru_male_documentary", "ru_female_blog", "tr_male_confident", "tr_female_warm", "en_male_news", "en_female_natural", "custom_voice_01", "custom_actor_avatar"]
 CHANNELS = ["Main / Universal", "Turkmen Culture", "Blogger Channel", "News Channel", "Street / Conversational", "Cinema Dubbing"]
+PLATFORMS = ["YouTube", "TikTok", "Instagram", "Facebook", "Telegram", "X", "Download to computer"]
 
 SAMPLE_TRANSLATIONS = {
-    ("ru", "tk"): "Salam. Men bu teksti arassa türkmen diline terjime edip, wideony seslendirmek isleýärin.",
-    ("tk", "ru"): "Здравствуйте. Я хочу перевести этот текст и озвучить видео.",
-    ("ru", "en"): "Hello. I want to translate this into clean English and voice the video.",
-    ("en", "ru"): "Здравствуйте. Я хочу перевести это на русский и озвучить видео.",
+    ("ru", "tk"): "Salam. Men bu wideony arassa türkmen diline terjime edip, professional derejede seslendirmek isleýärin.",
+    ("tk", "ru"): "Здравствуйте. Я хочу перевести это видео и сделать профессиональную озвучку.",
+    ("ru", "en"): "Hello. I want to translate this video into clean English and create professional dubbing.",
+    ("en", "ru"): "Здравствуйте. Я хочу перевести это видео на русский и сделать профессиональную озвучку.",
     ("tr", "ru"): "Здравствуйте. Это тестовый перевод с турецкого на русский.",
-    ("ru", "tr"): "Merhaba. Bunu temiz Türkçeye çevirip videoyu seslendirmek istiyorum.",
+    ("ru", "tr"): "Merhaba. Bu videoyu temiz Türkçeye çevirip profesyonel dublaj yapmak istiyorum.",
 }
 
 
@@ -315,24 +383,35 @@ def preview_translate(text: str, src: str, tgt: str, style: str, tone: str, emot
 
 def make_segments(target_lang: str, max_chars: int):
     raw = [
-        ("00:00.0", "00:04.2", "Привет. Я хочу перевести это видео.", SAMPLE_TRANSLATIONS.get(("ru", target_lang), "Preview translation for the first phrase.")),
-        ("00:04.2", "00:08.5", "Некоторые слова бывают длинные.", "AI will shorten or split long translated phrases so the voice ends on time."),
-        ("00:08.5", "00:12.0", "Озвучка должна идти синхронно.", "Dubbing, subtitles and translated text must stay synchronized."),
+        ("00:00.0", "00:04.2", "Actor 1", "Привет. Я хочу перевести это видео.", SAMPLE_TRANSLATIONS.get(("ru", target_lang), "Preview translation for the first phrase.")),
+        ("00:04.2", "00:08.5", "Actor 2", "Некоторые слова бывают длинные.", "AI shortens or splits long translated phrases so the voice ends exactly on time."),
+        ("00:08.5", "00:12.0", "Narrator", "Озвучка должна идти синхронно.", "Dubbing, subtitles and translated text stay synchronized with the original video."),
     ]
     return [
-        {"start": s, "end": e, "original": o, "translation": shorten(t, width=max_chars * 2, placeholder="…")}
-        for s, e, o, t in raw
+        {"start": s, "end": e, "speaker": sp, "original": o, "translation": shorten(t, width=max_chars * 2, placeholder="…"), "fit": "OK"}
+        for s, e, sp, o, t in raw
+    ]
+
+
+def actor_rows():
+    return [
+        {"Actor": "Actor 1", "Role": "Main character", "Assigned voice": "custom_voice_01", "Voice type": "male / cinema", "Quality": "studio clean"},
+        {"Actor": "Actor 2", "Role": "Second character", "Assigned voice": "tm_female_clear", "Voice type": "female / natural", "Quality": "clean"},
+        {"Actor": "Narrator", "Role": "Narrator", "Assigned voice": "ru_male_documentary", "Voice type": "documentary", "Quality": "broadcast"},
     ]
 
 
 st.markdown(
     """
     <style>
-    .block-container {padding-top: 3rem; max-width: 1320px;}
-    [data-testid="stSidebar"] {background: linear-gradient(180deg,#161827 0%,#222638 100%);}    
-    .studio-card {border: 1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 18px; background: rgba(255,255,255,.035);} 
-    .drop-card {border: 2px dashed rgba(125,92,255,.65); border-radius: 22px; padding: 22px; min-height: 300px; background: rgba(125,92,255,.08);} 
-    .sync-pill {display:inline-block; padding:6px 10px; border-radius:999px; background:#143d2a; color:#b9ffd8; font-weight:700;}
+    .block-container {padding-top: 2.6rem; max-width: 1380px;}
+    [data-testid="stSidebar"] {background: linear-gradient(180deg,#151827 0%,#25293b 100%);}    
+    .hero {border:1px solid rgba(255,255,255,.12); border-radius:24px; padding:24px; background:linear-gradient(135deg,rgba(106,76,255,.18),rgba(0,180,216,.10)); margin-bottom:18px;}
+    .studio-card {border: 1px solid rgba(255,255,255,.13); border-radius: 20px; padding: 18px; background: rgba(255,255,255,.04); box-shadow:0 12px 35px rgba(0,0,0,.16);} 
+    .drop-card {border: 2px dashed rgba(125,92,255,.70); border-radius: 24px; padding: 24px; min-height: 280px; background: rgba(125,92,255,.08); text-align:center;} 
+    .sync-pill {display:inline-block; padding:7px 12px; border-radius:999px; background:#143d2a; color:#b9ffd8; font-weight:800;}
+    .warn-pill {display:inline-block; padding:7px 12px; border-radius:999px; background:#4a3310; color:#ffe0a3; font-weight:800;}
+    .small-card {border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:14px; background:rgba(255,255,255,.035); min-height:120px;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -341,47 +420,43 @@ st.markdown(
 st.sidebar.title("🌐 Murat AI")
 st.session_state["ui_lang"] = st.sidebar.selectbox(
     "Interface language / Язык интерфейса",
-    ["ru", "tk", "tr", "en"],
+    LANGS,
     format_func=lambda x: LANG_LABELS[x],
     key="ui_lang_select",
 )
 active_channel = st.sidebar.selectbox(tr("channel_agent"), CHANNELS)
 st.sidebar.markdown("---")
-st.sidebar.success(tr("preview_online"))
+st.sidebar.success(tr("online"))
 st.sidebar.caption(tr("full_ai"))
 
-st.title("🌐 Murat AI")
-st.subheader(tr("brand_subtitle"))
-st.info(tr("preview_notice"))
+st.markdown(f"<div class='hero'><h1>🌐 Murat AI</h1><h3>{tr('subtitle')}</h3><p>{tr('notice')}</p></div>", unsafe_allow_html=True)
 
-tabs = st.tabs([tr("tab_translate"), tr("tab_media"), tr("tab_dictionary"), tr("tab_memory"), tr("tab_channels"), tr("tab_voices"), tr("tab_publish")])
+tabs = st.tabs([tr("tab_translate"), tr("tab_studio"), tr("tab_voice"), tr("tab_dictionary"), tr("tab_memory"), tr("tab_export"), tr("tab_publish")])
 
 with tabs[0]:
-    st.header(tr("text_preview"))
+    st.header(tr("translate_title"))
     c1, c2, c3 = st.columns(3)
-    with c1:
-        source_lang = st.selectbox(tr("from"), LANGS, format_func=lambda x: LANG_LABELS[x])
-    with c2:
-        target_lang = st.selectbox(tr("to"), LANGS, index=1, format_func=lambda x: LANG_LABELS[x])
-    with c3:
-        voice = st.selectbox(tr("voice"), VOICE_PROFILES)
+    source_lang = c1.selectbox(tr("from"), LANGS, format_func=lambda x: LANG_LABELS[x])
+    target_lang = c2.selectbox(tr("to"), LANGS, index=1, format_func=lambda x: LANG_LABELS[x])
+    voice = c3.selectbox(tr("voice"), VOICE_PROFILES)
     c4, c5, c6 = st.columns(3)
-    with c4:
-        style = st.selectbox(tr("style"), STYLES, index=0)
-    with c5:
-        tone = st.selectbox(tr("tone"), TONES, index=2)
-    with c6:
-        emotion = st.selectbox(tr("emotion"), EMOTIONS, index=0)
+    style = c4.selectbox(tr("style"), STYLES, index=0)
+    tone = c5.selectbox(tr("tone"), TONES, index=2)
+    emotion = c6.selectbox(tr("emotion"), EMOTIONS, index=0)
     text = st.text_area(tr("text"), value="Привет. Я хочу перевести это на чистый туркменский язык и озвучить видео.", height=150)
     if st.button(tr("translate"), type="primary"):
         st.text_area(tr("result"), value=preview_translate(text, source_lang, target_lang, style, tone, emotion), height=200)
 
 with tabs[1]:
-    st.header(tr("video_workspace"))
-    left, right = st.columns([1.05, 1.25], gap="large")
+    st.header(tr("studio_title"))
+    st.write(tr("studio_hint"))
+    left, right = st.columns([1.05, 1.35], gap="large")
     with left:
-        st.markdown(f"<div class='studio-card'><h3>{tr('video_left')}</h3><p>{tr('source_auto')}</p></div>", unsafe_allow_html=True)
-        uploaded = st.file_uploader(tr("upload_hint"), type=["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a"])
+        st.markdown(f"<div class='studio-card'><h3>{tr('source_box')}</h3><p>{tr('video_url')}</p></div>", unsafe_allow_html=True)
+        url = st.text_input(tr("video_url"), placeholder="https://youtube.com/... / https://tiktok.com/... / direct mp4")
+        if st.button(tr("download_source")):
+            st.success("Preview: link accepted. Full mode downloads video and extracts audio.")
+        uploaded = st.file_uploader(tr("upload_video"), type=["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a"])
         if uploaded:
             suffix = uploaded.name.lower().split(".")[-1]
             if suffix in ["mp4", "mov", "webm", "mkv"]:
@@ -389,64 +464,91 @@ with tabs[1]:
             else:
                 st.audio(uploaded)
         else:
-            st.markdown("<div class='drop-card'>🎬<br><br>Drop zone<br><br>Video / Audio preview will appear here</div>", unsafe_allow_html=True)
-        with st.expander(tr("fit_settings"), expanded=True):
-            max_chars = st.slider(tr("max_chars"), 24, 80, 42)
-            max_lines = st.slider(tr("max_lines"), 1, 3, 2)
-            sync_mode = st.radio(tr("sync_mode"), [tr("sync_soft"), tr("sync_strict"), tr("sync_cinematic")])
+            st.markdown("<div class='drop-card'>🎬<br><br>Drop video/audio here<br><br>URL import + file upload</div>", unsafe_allow_html=True)
+        st.subheader(tr("pipeline"))
+        st.code("URL/File → Clean audio → Detect speakers → Translate → Fit timing → Assign voices → Dub → Render final video")
     with right:
-        st.markdown(f"<div class='studio-card'><h3>{tr('video_right')}</h3></div>", unsafe_allow_html=True)
-        media_target = st.selectbox(tr("target_language"), LANGS, index=1, format_func=lambda x: LANG_LABELS[x], key="media_target")
-        if st.button(tr("generate_preview"), type="primary"):
+        c1, c2, c3 = st.columns(3)
+        media_target = c1.selectbox(tr("target_language"), LANGS, index=1, format_func=lambda x: LANG_LABELS[x], key="media_target")
+        cinema_level = c2.selectbox(tr("cinema_level"), VOICE_LEVELS, index=2)
+        sync_mode = c3.selectbox(tr("sync_mode"), SYNC_MODES, index=1)
+        c4, c5 = st.columns(2)
+        max_chars = c4.slider(tr("max_chars"), 24, 90, 42)
+        max_lines = c5.slider(tr("max_lines"), 1, 3, 2)
+        if st.button(tr("generate_script"), type="primary"):
             st.session_state["segments"] = make_segments(media_target, max_chars)
             st.session_state["script"] = "\n".join(row["translation"] for row in st.session_state["segments"])
-        script = st.text_area(tr("translated_script"), value=st.session_state.get("script", ""), height=220)
-        st.markdown(f"<span class='sync-pill'>✅ {tr('sync_status')}</span>", unsafe_allow_html=True)
-        st.caption(tr("sync_ok"))
+        st.text_area(tr("translated_text"), value=st.session_state.get("script", ""), height=180)
+        st.markdown(f"<span class='sync-pill'>✅ {tr('fit_status')}</span>", unsafe_allow_html=True)
+        st.caption(tr("fit_ok"))
+        st.subheader(tr("actor_map"))
+        actors = st.data_editor(actor_rows(), use_container_width=True, hide_index=True, num_rows="dynamic")
         if "segments" in st.session_state:
             st.subheader(tr("segments"))
             st.dataframe(st.session_state["segments"], use_container_width=True, hide_index=True)
 
 with tabs[2]:
-    st.header(tr("dict_title"))
-    st.write(tr("dict_desc"))
+    st.header(tr("voice_title"))
+    st.write(tr("voice_hint"))
+    v1, v2 = st.columns([1, 1], gap="large")
+    with v1:
+        st.markdown("<div class='studio-card'><h3>Voice Lab</h3></div>", unsafe_allow_html=True)
+        avatar_name = st.text_input(tr("avatar_name"), "Murat custom voice")
+        st.file_uploader(tr("voice_sample"), type=["wav", "mp3", "m4a", "flac"], key="voice_sample")
+        st.checkbox(tr("noise_clean"), value=True)
+        st.checkbox(tr("normalize"), value=True)
+        st.checkbox(tr("remove_echo"), value=True)
+        st.checkbox(tr("quality_check"), value=True)
+        consent = st.checkbox(tr("consent"))
+        if st.button(tr("create_voice"), type="primary"):
+            if consent:
+                st.success("Preview: voice profile created with clean/studio pipeline.")
+            else:
+                st.error("Consent is required.")
+    with v2:
+        st.markdown("<div class='studio-card'><h3>Avatar Studio</h3></div>", unsafe_allow_html=True)
+        st.file_uploader(tr("video_sample"), type=["mp4", "mov", "webm"], key="avatar_video")
+        st.selectbox(tr("cinema_level"), VOICE_LEVELS, index=2, key="avatar_level")
+        st.markdown("<div class='drop-card'>🧑‍🎤<br><br>AI avatar preview<br><br>Face + voice + emotion</div>", unsafe_allow_html=True)
+        st.caption(tr("avatar_preview"))
+
+with tabs[3]:
+    st.header(tr("dictionary_title"))
+    st.write(tr("dictionary_hint"))
     term = st.text_input(tr("source_word"))
     replacement = st.text_input(tr("preferred_translation"))
-    scope = st.radio(tr("scope"), [tr("global"), tr("current_channel")], horizontal=True)
+    scope = st.radio(tr("scope"), ["Global", active_channel], horizontal=True)
     if st.button(tr("save_rule")):
         st.success(f"{term} → {replacement} ({scope})")
 
-with tabs[3]:
+with tabs[4]:
     st.header(tr("memory_title"))
-    st.write(tr("memory_desc"))
+    st.write(tr("memory_hint"))
     st.dataframe([
         {"source": "Привет", "target": "Salam", "channel": active_channel},
         {"source": "Спасибо", "target": "Sag boluň", "channel": "Turkmen Culture"},
     ], use_container_width=True)
 
-with tabs[4]:
-    st.header(tr("channels_title"))
-    st.write(tr("channels_desc"))
-    st.dataframe([
-        {"channel": c, "style": "natural", "tone": "friendly", "voice": VOICE_PROFILES[i % len(VOICE_PROFILES)]}
-        for i, c in enumerate(CHANNELS)
-    ], use_container_width=True)
-
 with tabs[5]:
-    st.header(tr("voices_title"))
-    st.write(tr("voices_desc"))
-    for voice_name in VOICE_PROFILES:
-        st.markdown(f"- **{voice_name}**")
-    st.file_uploader(tr("upload_voice"), type=["wav", "mp3", "m4a"])
-    st.caption(tr("voice_notice"))
+    st.header(tr("export_title"))
+    st.write(tr("export_hint"))
+    e1, e2, e3, e4 = st.columns(4)
+    e1.markdown(f"<div class='small-card'><h4>{tr('final_video')}</h4><p>MP4 · 1080p · dubbed</p></div>", unsafe_allow_html=True)
+    e2.markdown("<div class='small-card'><h4>Subtitles</h4><p>SRT / VTT</p></div>", unsafe_allow_html=True)
+    e3.markdown("<div class='small-card'><h4>Audio</h4><p>WAV / MP3 stems</p></div>", unsafe_allow_html=True)
+    e4.markdown("<div class='small-card'><h4>Package</h4><p>ZIP for upload</p></div>", unsafe_allow_html=True)
+    st.download_button(tr("download_video"), data=b"Preview video placeholder", file_name="murat-ai-final-video-preview.txt")
+    st.download_button(tr("subtitle_file"), data=b"1\n00:00:00,000 --> 00:00:04,200\nMurat AI preview subtitles\n", file_name="murat-ai-subtitles.srt")
+    st.download_button(tr("audio_tracks"), data=b"Preview audio tracks placeholder", file_name="murat-ai-audio-tracks.txt")
+    st.download_button(tr("download_zip"), data=b"Preview ZIP package placeholder", file_name="murat-ai-publishing-package.txt")
 
 with tabs[6]:
     st.header(tr("publish_title"))
-    st.write(tr("publish_desc"))
-    title = st.text_input(tr("video_title"), "Murat AI preview video")
+    st.write(tr("publish_hint"))
+    title = st.text_input(tr("video_title"), "Murat AI professional dubbing video")
     description = st.text_area(tr("description"), "Generated with Murat AI")
-    platforms = st.multiselect(tr("platforms"), ["YouTube", "TikTok", "Instagram", "Facebook", "Telegram", "X"], ["YouTube"])
-    if st.button(tr("create_package")):
+    platforms = st.multiselect(tr("platforms"), PLATFORMS, ["YouTube", "TikTok", "Download to computer"])
+    if st.button(tr("create_package"), type="primary"):
         st.success(", ".join(platforms))
         st.json({"title": title, "description": description, "platforms": platforms, "created_at": datetime.utcnow().isoformat()})
 
