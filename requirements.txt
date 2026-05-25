@@ -1,7 +1,7 @@
 # Streamlit Cloud preview requirements for Murat AI.
 # Keep this file lightweight so the UI can deploy quickly.
 # Full AI/VPS requirements live in requirements-full.txt.
-# rebuild-marker: 2026-05-24-22:00 (claude-aligned-video-studio)
+# rebuild-marker: 2026-05-24-22:30 (restored-original-aligned-layout)
 
 # --- Core ---
 pydantic>=2.6,<3.0
