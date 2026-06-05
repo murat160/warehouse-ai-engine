@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "restored-original-aligned-layout / 2026-05-24-22:30"
+BUILD = "turkmen-tts-real-100 / 2026-05-24-23:00"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -283,9 +283,32 @@ def fit_translation_to_timeline(
     return out
 
 
+@st.cache_resource(show_spinner="Загружаю модель facebook/mms-tts-tuk-script_latin (~120 МБ, первый раз ~30 сек)…")
+def load_turkmen_tts_model():
+    """Кэш модели MMS-TTS на весь Streamlit процесс.
+
+    Первый вызов: качает чекпоинт с HuggingFace, прогружает в память.
+    Последующие вызовы возвращают тот же объект из кэша.
+    Если torch не установлен — возвращает None.
+    """
+
+    try:
+        from src.cloud.tts_turkmen import load_mms_tts_model  # type: ignore
+
+        return load_mms_tts_model()
+    except Exception as exc:  # noqa: BLE001
+        return {"_error": str(exc)}
+
+
 def synthesize_turkmen_tts_preview(
     text: str, emotion_profile: EmotionProfile, voice_profile_name: str
 ) -> Dict[str, Any]:
+    """Реальный туркменский TTS через src.cloud.tts_turkmen.
+
+    Прогревает модель через @st.cache_resource. На первом запуске
+    качает чекпоинт; дальше — мгновенно из кэша.
+    """
+
     try:
         from src.cloud.tts_turkmen import (  # type: ignore
             TurkmenVoiceProfile,
@@ -295,7 +318,20 @@ def synthesize_turkmen_tts_preview(
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "path": "", "message": f"Сервис tts_turkmen недоступен: {exc}", "bytes": b""}
 
+    cached = load_turkmen_tts_model()
+    if isinstance(cached, dict) and "_error" in cached:
+        return {
+            "ok": False,
+            "path": "",
+            "message": (
+                "MMS-TTS модель не загрузилась. Проверь requirements.txt (torch, transformers, scipy). "
+                f"Ошибка: {cached['_error']}"
+            ),
+            "bytes": b"",
+        }
+
     preset = get_emotion_preset(emotion_profile.emotion)
+    # Подмешиваем интенсивность из анализа оригинала.
     preset.energy = max(preset.energy, emotion_profile.energy)
     preset.volume = preset.volume * emotion_profile.volume
 
@@ -304,17 +340,20 @@ def synthesize_turkmen_tts_preview(
         path = synthesize_turkmen_tts(text, emotion_profile=preset, voice_profile=vp)
         with open(path, "rb") as f:
             data = f.read()
-        return {"ok": True, "path": path, "message": f"Готовая туркменская озвучка: {path}", "bytes": data}
+        return {
+            "ok": True,
+            "path": path,
+            "message": (
+                f"Готовая туркменская озвучка (MMS-TTS): {len(data)//1024} КБ · "
+                f"эмоция {preset.emotion} · темп {preset.speed:.2f} · высота {preset.pitch:.2f}"
+            ),
+            "bytes": data,
+        }
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
             "path": "",
-            "message": (
-                "Preview: настоящая туркменская озвучка через MMS-TTS работает на VPS. "
-                f"Текст подготовлен ({len(text)} симв.), эмоция={preset.emotion}, "
-                f"speed={preset.speed:.2f}, pitch={preset.pitch:.2f}, "
-                f"energy={preset.energy:.2f}, volume={preset.volume:.2f}."
-            ),
+            "message": f"Ошибка синтеза MMS-TTS: {exc}",
             "bytes": b"",
         }
 
@@ -628,7 +667,7 @@ active_emotion = (
 
 
 # === Главный блок видео: Исходное → стрелка → Готовое =======================
-left, mid, right = st.columns([10, 1.4, 10], gap="small")
+left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="top")
 
 # --- Левая карточка ---------------------------------------------------------
 with left:
@@ -747,7 +786,7 @@ with right:
 
 
 # === Блок 2: Аудио / мой голос ↔ Готовая туркменская озвучка =================
-left, mid, right = st.columns([10, 1.4, 10], gap="small")
+left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="top")
 
 with left:
     st.markdown("<div class='card'><h2>🎤 Мой голос / аудио</h2>", unsafe_allow_html=True)
@@ -794,25 +833,27 @@ with mid:
 
 with right:
     st.markdown("<div class='card'><h2>🔊 Готовая туркменская озвучка</h2>", unsafe_allow_html=True)
-    if st.button("Сгенерировать туркменскую озвучку (MMS-TTS)", type="primary", use_container_width=True, key="btn_tts_run"):
+    if st.button("🎙 Сгенерировать туркменскую озвучку (MMS-TTS)", type="primary", use_container_width=True, key="btn_tts_run"):
         ep = EmotionProfile(**st.session_state.analysis) if isinstance(st.session_state.analysis, dict) else EmotionProfile()
         if emotion_mode != "Автоматически по оригиналу":
             ep.emotion = emotion_mode
         text_for_tts = st.session_state.result_text or translate_text(st.session_state.source_text, src_lang, "tk")
-        result = synthesize_turkmen_tts_preview(text_for_tts, ep, voice_sel)
+        with st.spinner("Синтезирую туркменский MMS-TTS…"):
+            result = synthesize_turkmen_tts_preview(text_for_tts, ep, voice_sel)
         st.session_state.tts_audio_bytes = result["bytes"]
         st.session_state.tts_audio_message = result["message"]
         if result["ok"]:
             st.session_state.result_text = text_for_tts
             st.success(result["message"])
         else:
-            st.info(result["message"])
+            st.warning(result["message"])
 
     if st.session_state.tts_audio_bytes:
         st.audio(st.session_state.tts_audio_bytes)
     elif st.session_state.tts_audio_message:
         st.caption(st.session_state.tts_audio_message)
 
+    st.markdown("**Быстрая проверка интонации (браузерный голос — не MMS-TTS):**")
     render_speak_button(
         st.session_state.result_text or st.session_state.source_text,
         "tk" if dst_lang == "tk" else dst_lang,
@@ -838,12 +879,16 @@ with right:
         key="dl_mp3_voice",
     )
 
-    st.caption(f"Бэкенд: `{TURKMEN_TTS_BACKEND}`. На VPS — реальный MMS-TTS, в Streamlit Cloud — preview-fallback.")
+    st.caption(
+        f"Модель: `{TURKMEN_TTS_BACKEND}`. Туркменская озвучка генерируется CPU "
+        "прямо в Streamlit Cloud. Первый запуск ~30 сек (загрузка чекпоинта ~120 МБ), "
+        "дальше синтез ~2–5 сек на предложение."
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 # === Блок 3: Текст / сценарий ↔ Готовый перевод =============================
-left, mid, right = st.columns([10, 1.4, 10], gap="small")
+left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="top")
 
 with left:
     st.markdown("<div class='card'><h2>📝 Текст / сценарий / субтитры</h2>", unsafe_allow_html=True)
@@ -974,14 +1019,20 @@ for i, actor in enumerate(st.session_state.actors):
         key=f"act_rep_{i}",
     )
     with cols[4]:
-        render_speak_button(
-            f"Это пример голоса для роли {actor['role']}.",
-            "tk",
-            actor["suggested_voice"],
-            actor["dominant_emotion"],
-            speed, pitch, volume,
-            key=f"act_preview_{i}",
-        )
+        actor_sample_key = f"act_tm_sample_{i}"
+        if actor_sample_key not in st.session_state:
+            st.session_state[actor_sample_key] = b""
+        if st.button("▶ MMS-TTS", key=f"act_tm_btn_{i}", use_container_width=True):
+            ep_obj = EmotionProfile(**st.session_state.analysis) if isinstance(st.session_state.analysis, dict) else EmotionProfile()
+            ep_obj.emotion = actor["dominant_emotion"]
+            phrase = f"Salam, men {actor['role']}. Bu meniň türkmen sesim."
+            with st.spinner(f"Синтез для {actor['role']}…"):
+                res = synthesize_turkmen_tts_preview(phrase, ep_obj, actor["suggested_voice"])
+            st.session_state[actor_sample_key] = res["bytes"]
+            if not res["ok"]:
+                st.warning(res["message"])
+        if st.session_state[actor_sample_key]:
+            st.audio(st.session_state[actor_sample_key])
     if actor["replace_mode"] == "Загрузить отдельный":
         st.file_uploader(
             f"Голос для роли «{actor['role']}» (WAV/MP3/M4A 30–40 сек.)",
@@ -993,6 +1044,11 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # === Каталог голосов =========================================================
 st.markdown("<div class='card'><h2>🎙️ Каталог голосов</h2>", unsafe_allow_html=True)
+st.caption(
+    "Для туркменских голосов — настоящий MMS-TTS пример (CPU, ~3 сек). "
+    "Для остальных языков — браузерный preview (быстрый, но не настоящий синтез)."
+)
+TM_SAMPLE = "Salam dostum! Bu Murat AI Studio. Türkmen sesi şu ýerde."
 for i, v in enumerate(VOICE_CATALOG):
     c1, c2 = st.columns([2, 1])
     c1.markdown(
@@ -1002,14 +1058,30 @@ for i, v in enumerate(VOICE_CATALOG):
         unsafe_allow_html=True,
     )
     with c2:
-        render_speak_button(
-            f"Это пример голоса {v['name']}.",
-            v["lang"] if v["lang"] in LANGS else "tk",
-            v["name"],
-            active_emotion,
-            speed, pitch, volume,
-            key=f"cat_voice_{i}",
-        )
+        if v["lang"] == "tk":
+            sample_key = f"cat_tm_sample_{i}"
+            if sample_key not in st.session_state:
+                st.session_state[sample_key] = b""
+            if st.button(f"▶ Прослушать (MMS-TTS)", key=f"cat_tm_btn_{i}", use_container_width=True):
+                ep_obj = EmotionProfile(**st.session_state.analysis) if isinstance(st.session_state.analysis, dict) else EmotionProfile()
+                if emotion_mode != "Автоматически по оригиналу":
+                    ep_obj.emotion = emotion_mode
+                with st.spinner("Синтезирую туркменскую речь…"):
+                    res = synthesize_turkmen_tts_preview(TM_SAMPLE, ep_obj, v["name"])
+                st.session_state[sample_key] = res["bytes"]
+                if not res["ok"]:
+                    st.warning(res["message"])
+            if st.session_state[sample_key]:
+                st.audio(st.session_state[sample_key])
+        else:
+            render_speak_button(
+                f"Это пример голоса {v['name']}.",
+                v["lang"] if v["lang"] in LANGS else "ru",
+                v["name"],
+                active_emotion,
+                speed, pitch, volume,
+                key=f"cat_voice_{i}",
+            )
 st.markdown("</div>", unsafe_allow_html=True)
 
 
