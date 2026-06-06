@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "video-in-frame / 2026-05-25-02:00 / autoformat"
+BUILD = "no-duplicate-player / 2026-06-07 / progress-top + auto-pipeline"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -181,6 +181,7 @@ def init_state() -> None:
         "final_srt_url": "",
         "final_txt_url": "",
         "final_zip_url": "",
+        "sim_started_at": None,   # для симуляции прогресса без backend
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -479,78 +480,49 @@ def project_json() -> bytes:
 def render_device_placeholder(label: str, fmt: Dict[str, str], screen: Dict[str, Any]) -> None:
     """Пустая видеорамка: device chrome с aspect-ratio устройства + placeholder."""
 
-    st.markdown(
-        f"""
-        <div class='video-frame'>
-            <div class='device device-{screen['kind']}' style='aspect-ratio:{screen['device_ratio']}'>
-                <div class='device-inner'>
-                    <div class='device-content'>
-                        {label}<br>
-                        <span>{fmt['label']} · {screen['label']}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    media = (
+        f"<div class='device-content' style='color:#dbeafe;font-size:14px;font-weight:900;"
+        f"text-align:center;padding:14px;line-height:1.4'>"
+        f"{label}<br>"
+        f"<span style='color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px'>"
+        f"{fmt['label']} · {screen['label']}</span>"
+        f"</div>"
     )
+    render_device_with_media(screen, media)
 
 
 def render_device_video_open(screen: Dict[str, Any]) -> None:
-    """Открывает device chrome — внутри потом рендерится st.video()."""
+    """DEPRECATED — оставлено только для back-compat. НЕ ИСПОЛЬЗОВАТЬ.
+    Streamlit st.video() не оборачивается в st.markdown div, и плеер
+    выпадает наружу рамки. Используй render_device_video_url / data_url."""
 
-    st.markdown(
-        f"""
-        <div class='video-frame'>
-            <div class='device device-{screen['kind']}' style='aspect-ratio:{screen['device_ratio']}'>
-                <div class='device-inner device-inner-video'>
-        """,
-        unsafe_allow_html=True,
-    )
+    pass
 
 
 def render_device_video_close() -> None:
-    st.markdown("</div></div></div>", unsafe_allow_html=True)
+    """DEPRECATED — см. render_device_video_open."""
 
-
-_FRAME_INNER_CSS = """
-<style>
-html,body{margin:0;padding:0;background:transparent}
-.video-frame{width:100%;height:380px;display:flex;align-items:center;justify-content:center;background:#0b1220;border-radius:16px;padding:10px;box-sizing:border-box;border:1px solid rgba(255,255,255,.08)}
-.device{max-height:100%;max-width:100%;position:relative;display:flex;align-items:center;justify-content:center}
-.device-inner{width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-.device-inner video,.device-inner iframe,.device-inner img{width:100%;height:100%;object-fit:contain;border:0;background:#000}
-.device-phone-v   .device-inner{border:8px solid #111;border-radius:26px}
-.device-phone-v::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:60px;height:12px;background:#000;border-radius:0 0 10px 10px;z-index:5}
-.device-phone-h   .device-inner{border:8px solid #111;border-radius:20px}
-.device-tablet    .device-inner{border:12px solid #1a1a1a;border-radius:18px}
-.device-laptop    .device-inner{border:8px solid #2b2b2b;border-top-width:18px;border-radius:12px 12px 4px 4px}
-.device-monitor   .device-inner{border:10px solid #1a1a1a;border-radius:8px}
-.device-tv        .device-inner{border:14px solid #050505;border-radius:12px}
-.device-bare      .device-inner{border-radius:12px}
-</style>
-"""
+    pass
 
 
 def render_device_with_media(screen: Dict[str, Any], media_html: str) -> None:
-    """Встраивает device frame + media (video/iframe/img) в ОДНОМ html-блоке.
+    """Встраивает device frame + media в ОДИН st.markdown.
 
-    Streamlit st.video() не оборачивается в st.markdown <div>, поэтому видео
-    рендерилось отдельно от рамки. Здесь рисуем ВСЁ через components.html
-    в одном iframe — рамка и видео всегда вместе.
+    КРИТИЧНО: НЕ использовать components.html — он рендерит iframe ПОД
+    предыдущим st.markdown, из-за чего рамка пустая сверху, плеер снизу.
+    Через st.markdown(unsafe_allow_html=True) всё рисуется одним блоком.
     """
 
     html = f"""
-    {_FRAME_INNER_CSS}
-    <div class='video-frame'>
-        <div class='device device-{screen['kind']}' style='aspect-ratio:{screen['device_ratio']}'>
-            <div class='device-inner'>
-                {media_html}
-            </div>
-        </div>
+<div class='video-frame'>
+  <div class='device device-{screen['kind']}'>
+    <div class='device-inner'>
+      {media_html}
     </div>
-    """
-    components.html(html, height=400)
+  </div>
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _youtube_id(url: str) -> str:
@@ -561,21 +533,31 @@ def _youtube_id(url: str) -> str:
     return m.group(1) if m else ""
 
 
-def render_device_youtube(screen: Dict[str, Any], youtube_id: str) -> None:
-    """YouTube embed внутри device frame."""
+def render_device_youtube(screen: Dict[str, Any], youtube_id: str, url: str = "") -> None:
+    """YouTube preview ВНУТРИ device frame. Используем thumbnail + кнопку-ссылку
+    (iframe фильтруется bleach в Streamlit markdown)."""
 
-    iframe = (
-        f"<iframe src='https://www.youtube.com/embed/{youtube_id}' "
-        "allow='accelerometer; autoplay; clipboard-write; encrypted-media; "
-        "gyroscope; picture-in-picture' allowfullscreen></iframe>"
+    thumb = f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
+    media = (
+        f"<a href='{url or 'https://youtu.be/' + youtube_id}' target='_blank' "
+        f"class='yt-preview' style='display:block;width:100%;height:100%;position:relative'>"
+        f"<img src='{thumb}' alt='YouTube preview' "
+        f"style='width:100%;height:100%;object-fit:cover'/>"
+        f"<span style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);"
+        f"width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.7);"
+        f"display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff'>▶</span>"
+        f"</a>"
     )
-    render_device_with_media(screen, iframe)
+    render_device_with_media(screen, media)
 
 
 def render_device_video_url(screen: Dict[str, Any], video_url: str) -> None:
     """HTML5 video внутри device frame для скачанного MP4."""
 
-    video = f"<video src='{video_url}' controls preload='metadata'></video>"
+    video = (
+        f"<video src='{video_url}' controls preload='metadata' "
+        f"style='width:100%;height:100%;object-fit:contain;background:#000'></video>"
+    )
     render_device_with_media(screen, video)
 
 
@@ -586,15 +568,38 @@ def render_device_video_data_url(screen: Dict[str, Any], video_bytes: bytes, mim
     if not video_bytes:
         return
     b64 = _b64.b64encode(video_bytes).decode("ascii")
-    video = f"<video src='data:{mime};base64,{b64}' controls preload='metadata'></video>"
+    video = (
+        f"<video src='data:{mime};base64,{b64}' controls preload='metadata' "
+        f"style='width:100%;height:100%;object-fit:contain;background:#000'></video>"
+    )
     render_device_with_media(screen, video)
 
 
 def render_device_image(screen: Dict[str, Any], image_url: str) -> None:
     """Thumbnail внутри device frame."""
 
-    img = f"<img src='{image_url}' alt='thumbnail'/>"
+    img = f"<img src='{image_url}' alt='thumbnail' style='width:100%;height:100%;object-fit:cover'/>"
     render_device_with_media(screen, img)
+
+
+def render_device_progress(screen: Dict[str, Any], stage: str, percent: int, eta_sec: int) -> None:
+    """Прогресс-бар ВНУТРИ device frame пока идёт генерация."""
+
+    mins = max(0, eta_sec // 60)
+    secs = max(0, eta_sec % 60)
+    eta_label = f"~{mins} мин {secs} сек" if mins else f"~{secs} сек"
+    media = (
+        f"<div style='width:100%;height:100%;display:flex;flex-direction:column;"
+        f"align-items:center;justify-content:center;padding:24px;color:#dbeafe;text-align:center'>"
+        f"<div style='font-size:13px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px'>Генерация на VPS</div>"
+        f"<div style='font-size:15px;font-weight:900;margin-bottom:14px'>{stage}</div>"
+        f"<div style='width:80%;height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden'>"
+        f"<div style='width:{percent}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>"
+        f"</div>"
+        f"<div style='font-size:12px;color:#cbd5e1;margin-top:10px'>{percent}% · осталось {eta_label}</div>"
+        f"</div>"
+    )
+    render_device_with_media(screen, media)
 
 
 def render_arrow() -> None:
@@ -699,14 +704,23 @@ st.markdown(
 
     /* === Device chrome (центрируется внутри .video-frame) === */
     .device {{
-        max-height:100%;max-width:100%;position:relative;
-        display:flex;align-items:center;justify-content:center
+        height:100%;max-width:100%;position:relative;
+        display:flex;align-items:center;justify-content:center;aspect-ratio:16/10
     }}
     .device-inner {{
         width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);
         display:flex;align-items:center;justify-content:center;
         overflow:hidden;position:relative
     }}
+    /* Любой медиа-элемент внутри device-inner полностью заполняет рамку */
+    .device-inner video, .device-inner img, .device-inner a, .device-inner > div {{
+        width:100%;height:100%
+    }}
+    .device-inner video, .device-inner a img {{
+        object-fit:contain;background:#000
+    }}
+    .yt-preview {{display:block;width:100%;height:100%;position:relative}}
+    .yt-preview img {{object-fit:cover!important}}
     .device-content {{color:#dbeafe;font-size:14px;font-weight:900;text-align:center;padding:14px;line-height:1.4}}
     .device-content span {{color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px}}
 
@@ -775,6 +789,131 @@ else:
         "(скачивание YouTube, ASR, MMS-TTS, рендер MP4) делается на VPS. "
         "Добавь `BACKEND_URL=https://your-vps-domain.com` в Streamlit Secrets, чтобы включить обработку."
     )
+
+
+# === ВЕРХНИЙ Job Progress (показывается над всеми блоками во время генерации) ==
+# Стадии и их ожидаемая длительность (для расчёта ETA при симуляции)
+_PIPELINE_STAGES_RU = {
+    "queued":              ("В очереди",                                3),
+    "downloading":         ("Скачивание видео",                         25),
+    "extracting_audio":    ("Извлечение аудиодорожки",                  10),
+    "transcribing":        ("Распознавание речи (Whisper)",             30),
+    "detecting_speakers":  ("Определение актёров",                      15),
+    "analyzing_emotions":  ("Анализ эмоций оригинала",                  10),
+    "translating":         ("Перевод на туркменский",                   20),
+    "quality_check":       ("Проверка качества перевода",               8),
+    "tts":                 ("Туркменская озвучка MMS-TTS",              45),
+    "syncing":             ("Синхронизация с видео",                    15),
+    "rendering":           ("Сборка финального MP4",                    35),
+    "done":                ("Готово",                                   0),
+    "failed":              ("Ошибка",                                   0),
+}
+
+
+def _simulate_local_stage() -> Dict[str, Any]:
+    """Локальная симуляция прогресса когда BACKEND_URL не подключён.
+
+    Считает elapsed_sec от sim_started_at и определяет текущую стадию.
+    Это НЕ настоящая генерация — финальное видео НЕ появится, но пользователь
+    видит «сколько времени осталось» и список этапов.
+    """
+
+    import time as _time
+    started = st.session_state.get("sim_started_at")
+    if not started:
+        return {}
+    elapsed = _time.time() - started
+    cumulative = 0
+    total = sum(d for _, d in _PIPELINE_STAGES_RU.values() if d > 0)
+    for stage_id, (label, dur) in _PIPELINE_STAGES_RU.items():
+        if dur == 0:
+            continue
+        if elapsed < cumulative + dur:
+            stage_progress = (elapsed - cumulative) / dur
+            global_progress = int(((cumulative + stage_progress * dur) / total) * 100)
+            return {
+                "stage": stage_id,
+                "current_step": label,
+                "progress": global_progress,
+                "eta_sec": max(0, int(total - elapsed)),
+                "simulated": True,
+            }
+        cumulative += dur
+    return {"stage": "done", "current_step": "Готово", "progress": 100, "eta_sec": 0, "simulated": True}
+
+
+_active_job = bool(st.session_state.get("job_id"))
+_active_sim = bool(st.session_state.get("sim_started_at"))
+
+if _active_job or _active_sim:
+    # Получаем текущий статус: реальный с backend или симуляция.
+    status = None
+    if _active_job and _bk_ok and _bk_health.get("ok"):
+        try:
+            from src.backend_client import job_status as _job_status, job_result as _job_result  # type: ignore
+            status = _job_status(st.session_state.job_id)
+        except Exception:
+            status = None
+    if status is None and _active_sim:
+        status = _simulate_local_stage()
+
+    if status:
+        stage_id = status.get("stage") or status.get("status") or "queued"
+        progress = int(status.get("progress", 0))
+        current_step = status.get("current_step") or _PIPELINE_STAGES_RU.get(stage_id, (stage_id, 0))[0]
+        eta_sec = int(status.get("eta_sec", 0)) if "eta_sec" in status else 0
+        if not eta_sec and stage_id not in ("done", "failed"):
+            # Простая оценка ETA: оставшийся % * среднее на 1%.
+            total_dur = sum(d for _, d in _PIPELINE_STAGES_RU.values() if d > 0)
+            eta_sec = int((100 - progress) / 100 * total_dur)
+        eta_label = (
+            f"~{eta_sec // 60} мин {eta_sec % 60} сек"
+            if eta_sec >= 60 else f"~{eta_sec} сек"
+        ) if stage_id not in ("done", "failed") else ("✅ Готово!" if stage_id == "done" else "❌ Ошибка")
+
+        # Большая прогресс-карточка сверху.
+        sim_badge = "<span class='pill'>симуляция (нет BACKEND_URL)</span>" if status.get("simulated") else "<span class='pill ok'>VPS backend</span>"
+        st.markdown(
+            f"""
+            <div class='card' style='border:2px solid #7c3aed;background:linear-gradient(135deg,#1e1b4b,#0b1220)'>
+                <div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>
+                    <div>
+                        <p style='margin:0;font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase'>Генерация туркменского видео</p>
+                        <p style='margin:4px 0 0;color:#fff;font-size:18px;font-weight:900'>{current_step}</p>
+                    </div>
+                    <div style='text-align:right'>
+                        <p style='margin:0;color:#fff;font-size:24px;font-weight:900'>{progress}%</p>
+                        <p style='margin:2px 0 0;color:#cbd5e1;font-size:13px'>осталось {eta_label}</p>
+                    </div>
+                </div>
+                <div style='width:100%;height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:14px'>
+                    <div style='width:{progress}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>
+                </div>
+                <div style='margin-top:10px'>{sim_badge}<span class='pill'>Этап: {stage_id}</span><span class='pill'>{progress}%</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.session_state.job_status = status
+
+        # Auto-rerun каждые 2 сек пока pipeline не done/failed.
+        if stage_id not in ("done", "failed"):
+            import time as _time
+            _time.sleep(2)
+            st.rerun()
+        elif stage_id == "done" and _active_job and _bk_ok and _bk_health.get("ok"):
+            try:
+                res = _job_result(st.session_state.job_id)
+                if res.get("ok"):
+                    st.session_state.final_video_url = res.get("final_video_url", "")
+                    st.session_state.final_audio_url = res.get("audio_url", "")
+                    st.session_state.final_srt_url = res.get("srt_url", "")
+                    st.session_state.final_zip_url = res.get("zip_url", "")
+            except Exception:
+                pass
+        elif stage_id == "done" and status.get("simulated"):
+            # Симуляция закончилась — финального видео не будет, но сбросим sim.
+            st.session_state.sim_started_at = None
 
 
 # === Компактная панель настроек (НАВЕРХУ, не между видео) ===================
@@ -877,8 +1016,9 @@ with left:
     elif st.session_state.video_bytes:
         render_device_video_data_url(screen, st.session_state.video_bytes)
     elif _yt_id:
-        # До скачивания показываем YouTube embed ВНУТРИ device frame.
-        render_device_youtube(screen, _yt_id)
+        # До скачивания показываем YouTube thumbnail ВНУТРИ device frame
+        # (iframe фильтруется bleach в st.markdown — используем thumbnail + link).
+        render_device_youtube(screen, _yt_id, st.session_state.video_url)
     elif st.session_state.get("url_preview", {}).get("thumbnail"):
         render_device_image(screen, st.session_state["url_preview"]["thumbnail"])
     else:
@@ -1014,42 +1154,83 @@ with right:
 
     if st.session_state.final_video_url:
         render_device_video_url(screen, _abs_url(st.session_state.final_video_url))
+    elif st.session_state.get("job_status") and st.session_state["job_status"].get("stage") not in (None, "done", "failed"):
+        s = st.session_state["job_status"]
+        render_device_progress(
+            screen,
+            s.get("current_step") or s.get("stage", ""),
+            int(s.get("progress", 0)),
+            int(s.get("eta_sec", 0)),
+        )
     else:
         render_device_placeholder("Готовое видео появится здесь", fmt, screen)
 
-    # Главная кнопка — запускает process-turkmen на скачанном job.
+    # Главная кнопка — автоматический pipeline (download + process одним кликом).
     if st.button("✨ Создать готовое видео на туркменском", type="primary", use_container_width=True, key="btn_make_video"):
         st.session_state.analysis = asdict(analyze_emotion(st.session_state.source_text))
         st.session_state.result_text = translate_text(st.session_state.source_text, src_lang, dst_lang)
         st.session_state.result_ready = True
+        st.session_state.final_video_url = ""  # сбрасываем старый результат
+
         try:
-            from src.backend_client import is_configured, process_turkmen  # type: ignore
+            from src.backend_client import (  # type: ignore
+                download_url, is_configured, process_turkmen, upload_and_create_job,
+            )
         except Exception:
             is_configured = lambda: False  # type: ignore  # noqa: E731
-            process_turkmen = None  # type: ignore
+            download_url = process_turkmen = upload_and_create_job = None  # type: ignore
 
-        if is_configured() and st.session_state.job_id and process_turkmen:
-            emotion_mode_api = (
-                "auto_original" if emotion_mode == "Автоматически по оригиналу"
-                else f"manual:{emotion_mode}"
-            )
-            res = process_turkmen(
-                st.session_state.job_id,
-                target_language="tk",
-                voice_mode="auto_original",
-                emotion_mode=emotion_mode_api,
-                output_quality=quality,
-                video_format=fmt["label"],
-                style="cultural",
-            )
-            if res.get("ok"):
-                st.success(f"Pipeline запущен. Job: {st.session_state.job_id}. Следи за прогрессом ниже.")
-            else:
-                st.warning(res.get("message", "Backend не запустил pipeline."))
-        elif not st.session_state.job_id:
-            st.warning("Сначала загрузи видео по ссылке или с устройства — backend должен скачать source перед обработкой.")
+        if is_configured() and _bk_health.get("ok"):
+            # 1) Если ещё не скачано — автоматически скачать.
+            if not st.session_state.job_id:
+                if st.session_state.video_url and download_url:
+                    with st.spinner("⬇️ Шаг 1/2: скачиваю исходник через yt-dlp…"):
+                        dl = download_url(st.session_state.video_url, quality=source_quality)
+                    if dl.get("ok"):
+                        st.session_state.job_id = dl["job_id"]
+                        st.session_state.source_video_url = dl["source_video_url"]
+                        st.session_state.source_video_title = dl.get("title", "")
+                        st.session_state.source_video_duration = dl.get("duration", 0)
+                        st.session_state.source_video_size_mb = dl.get("file_size_mb", 0)
+                    else:
+                        st.warning(dl.get("message", "Скачивание не удалось."))
+                elif st.session_state.video_bytes and upload_and_create_job:
+                    with st.spinner("⬆️ Шаг 1/2: отправляю файл на backend…"):
+                        up = upload_and_create_job(
+                            st.session_state.video_bytes,
+                            st.session_state.video_name or "video.mp4",
+                            quality=quality, aspect=fmt["label"],
+                        )
+                    if up.get("ok") or up.get("job_id"):
+                        st.session_state.job_id = up.get("job_id", "")
+                        st.session_state.source_video_url = up.get("source_video_url", "")
+                else:
+                    st.warning("Сначала вставь ссылку или загрузи файл.")
+            # 2) Запускаем process-turkmen.
+            if st.session_state.job_id and process_turkmen:
+                emotion_mode_api = (
+                    "auto_original" if emotion_mode == "Автоматически по оригиналу"
+                    else f"manual:{emotion_mode}"
+                )
+                res = process_turkmen(
+                    st.session_state.job_id,
+                    target_language="tk",
+                    voice_mode="auto_original",
+                    emotion_mode=emotion_mode_api,
+                    output_quality=quality,
+                    video_format=fmt["label"],
+                    style="cultural",
+                )
+                if res.get("ok"):
+                    st.session_state.sim_started_at = None  # реальный backend → симуляция выключена
+                    st.success(f"🚀 Pipeline запущен на VPS. Job: {st.session_state.job_id}.")
+                else:
+                    st.warning(res.get("message", "Backend не запустил pipeline."))
         else:
-            st.info("Preview: BACKEND_URL не настроен — реальный MP4 рендерится только на VPS.")
+            # Preview: симулируем прогресс чтобы пользователь видел этапы и ETA.
+            import time as _time
+            st.session_state.sim_started_at = _time.time()
+            st.info("🎬 Запущена симуляция этапов (BACKEND_URL не настроен — реальный MP4 рендерится только на VPS).")
         st.rerun()
 
     # Реальные download-кнопки. Используют backend file URL если есть.
@@ -1284,66 +1465,23 @@ st.caption(
 st.markdown("</div>", unsafe_allow_html=True)
 
 
-# === Quality Report для туркменского перевода ================================
-# === Job Progress (если backend запустил pipeline) ==========================
-if st.session_state.get("job_id"):
-    st.markdown("<div class='card'><h2>⏳ Прогресс обработки на VPS</h2>", unsafe_allow_html=True)
-    try:
-        from src.backend_client import is_configured, job_result, job_status  # type: ignore
-        if is_configured():
-            status = job_status(st.session_state.job_id)
-            st.session_state.job_status = status
-            stage = status.get("stage") or status.get("status") or "queued"
-            progress = int(status.get("progress", 0))
-            current_step = status.get("current_step", stage)
-            st.progress(min(100, max(0, progress)) / 100.0)
-            st.markdown(
-                f"<span class='pill ok'>Job: {st.session_state.job_id}</span>"
-                f"<span class='pill'>Этап: {current_step}</span>"
-                f"<span class='pill'>{progress}%</span>",
-                unsafe_allow_html=True,
-            )
-            if status.get("message"):
-                st.caption(status["message"])
-            if status.get("error"):
-                st.error(status["error"])
-            if stage == "done":
-                res = job_result(st.session_state.job_id)
-                if res.get("ok"):
-                    # Сохраняем готовые URL'ы — правая карточка покажет видео + кнопки.
-                    st.session_state.final_video_url = res.get("final_video_url", "")
-                    st.session_state.final_audio_url = res.get("audio_url", "")
-                    st.session_state.final_srt_url = res.get("srt_url", "")
-                    st.session_state.final_txt_url = res.get("txt_url", "")
-                    st.session_state.final_zip_url = res.get("zip_url", "")
-                    st.success(
-                        f"✅ Готово! final_turkmen_video.mp4 сохранён в "
-                        f"storage/jobs/{st.session_state.job_id}/output/"
-                    )
-            colA, colB = st.columns([1, 1])
-            if colA.button("🔄 Обновить статус", key="btn_refresh_job", use_container_width=True):
-                st.rerun()
-            if colB.button("✖ Сбросить job", key="btn_reset_job", use_container_width=True):
-                for k in [
-                    "job_id", "job_status", "source_video_url", "source_video_title",
-                    "source_video_duration", "source_video_size_mb", "source_video_thumbnail",
-                    "final_video_url", "final_audio_url", "final_srt_url",
-                    "final_txt_url", "final_zip_url", "url_preview",
-                ]:
-                    st.session_state[k] = "" if isinstance(st.session_state.get(k), str) else None
-                st.rerun()
-        else:
-            st.info(
-                "BACKEND_URL не настроен — статус job недоступен. "
-                "Добавь `BACKEND_URL=https://your-vps-domain.com` в Streamlit Secrets, "
-                "или сбрось job_id ниже."
-            )
-            if st.button("Сбросить job_id", key="btn_reset_job_offline"):
-                st.session_state.job_id = ""
-                st.rerun()
-    except Exception as exc:
-        st.warning(f"Не могу получить статус: {exc}")
-    st.markdown("</div>", unsafe_allow_html=True)
+# === Сброс job (компактный) — основной прогресс показан сверху страницы ======
+if st.session_state.get("job_id") or st.session_state.get("sim_started_at"):
+    with st.expander("⚙️ Управление job"):
+        st.caption(f"Job ID: `{st.session_state.get('job_id') or '— симуляция —'}`")
+        cA, cB = st.columns(2)
+        if cA.button("🔄 Обновить статус", key="btn_refresh_job", use_container_width=True):
+            st.rerun()
+        if cB.button("✖ Сбросить job", key="btn_reset_job", use_container_width=True):
+            for k in [
+                "job_id", "job_status", "source_video_url", "source_video_title",
+                "source_video_duration", "source_video_size_mb", "source_video_thumbnail",
+                "final_video_url", "final_audio_url", "final_srt_url",
+                "final_txt_url", "final_zip_url", "url_preview",
+            ]:
+                st.session_state[k] = "" if isinstance(st.session_state.get(k), str) else None
+            st.session_state.sim_started_at = None
+            st.rerun()
 
 
 # === Quality Report ==========================================================
