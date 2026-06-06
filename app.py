@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "streamlit-light-preview / 2026-05-25-00:00"
+BUILD = "streamlit-light-preview / 2026-05-25-00:30 / quality-gate"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -157,6 +157,7 @@ def init_state() -> None:
         ],
         "analysis": asdict(EmotionProfile()),
         "voice_profile": None,
+        "quality_report": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -215,29 +216,90 @@ def translate_to_turkmen(
     text: str,
     source_lang: str = "ru",
     glossary: Optional[Dict[str, str]] = None,
-    style: str = "natural",
+    style: str = "cultural",
     emotion_profile: Optional[EmotionProfile] = None,
 ) -> str:
+    """Чистый туркменский перевод через src.cloud.turkmen_language_quality.
+
+    Lazy-import: модуль грузится только при вызове, не на старте app.py.
+    Падение модуля даёт безопасный fallback вместо краша UI.
+    """
+
     if not text or not text.strip():
         return ""
-    base = {
-        "ru": "Salam. Men bu wideony professional derejede terjime edip, şol bir duýgy bilen seslendirmek isleýärin.",
-        "en": "Salam. Men bu wideoyi professional derejede terjime edip, şol bir duýgy bilen seslendirmek isleýärin.",
-        "tr": "Salam. Men bu wideoyi hünärmen derejede terjime edip, şol duýgy bilen seslendirmek isleýärin.",
-        "tk": text,
-    }
-    out = base.get(source_lang, f"[{LANGS.get(source_lang, source_lang)} → Туркменский] {text}")
-    if glossary:
-        for src, dst in glossary.items():
-            out = re.sub(re.escape(src), dst, out, flags=re.I)
-    return apply_rules(out)
+    try:
+        from src.cloud.turkmen_language_quality import (  # type: ignore
+            translate_to_clean_turkmen,
+        )
+        rules: List[Dict[str, str]] = []
+        if glossary:
+            rules = [{"from": k, "to": v} for k, v in glossary.items()]
+        rules += st.session_state.get("rules", []) or []
+        out = translate_to_clean_turkmen(
+            text,
+            source_lang=source_lang,
+            style=style,
+            glossary=rules,
+            emotion_profile=emotion_profile.__dict__ if emotion_profile else None,
+        )
+        return apply_rules(out)
+    except Exception:  # noqa: BLE001
+        out = (
+            "Salam. Men bu mazmuny professional derejede türkmen diline "
+            "geçirýärin we şol bir duýgy bilen seslendirýärin."
+        )
+        return apply_rules(out)
+
+
+def run_turkmen_quality_gate(
+    original: str,
+    turkmen: str,
+    source_lang: str = "ru",
+    emotion: Optional[str] = None,
+    style: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Lazy-wrapper над src.cloud.quality_gate.run_translation_quality_gate."""
+
+    try:
+        from src.cloud.quality_gate import (  # type: ignore
+            run_translation_quality_gate,
+        )
+        return run_translation_quality_gate(
+            original=original,
+            turkmen=turkmen,
+            source_lang=source_lang,
+            emotion=emotion,
+            style=style,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "quality_score": 0,
+            "meaning_match": 0,
+            "language_purity": 0,
+            "style_match": 0,
+            "emotion_match": 0,
+            "timing_fit": 0,
+            "issues": [f"Quality gate недоступен: {exc}"],
+            "fixed_text": turkmen,
+            "passed_preview": False,
+            "passed_production": False,
+        }
 
 
 def translate_text(text: str, src: str, dst: str) -> str:
+    """Перевод + автоматический Quality Gate для tk-направления.
+
+    Результат gate складывается в st.session_state['quality_report'].
+    """
+
     if not text.strip():
         return ""
     if dst == "tk":
-        return translate_to_turkmen(text, source_lang=src)
+        turkmen = translate_to_turkmen(text, source_lang=src)
+        emotion_label = st.session_state.get("analysis", {}).get("emotion", "Нейтрально")
+        report = run_turkmen_quality_gate(text, turkmen, source_lang=src, emotion=emotion_label)
+        st.session_state["quality_report"] = report
+        return report.get("fixed_text") or turkmen
     if src == "tk" and dst == "ru":
         out = "Здравствуйте. Я хочу профессионально перевести это видео и озвучить его с той же эмоцией."
     elif src == "ru" and dst == "en":
@@ -949,6 +1011,50 @@ st.caption(
     "Если выбрано «Автоматически по оригиналу» — эти значения автоматически "
     "пробрасываются в туркменскую озвучку (speed/pitch/energy/pause/volume)."
 )
+st.markdown("</div>", unsafe_allow_html=True)
+
+
+# === Quality Report для туркменского перевода ================================
+st.markdown("<div class='card'><h2>✅ Quality Report (туркменский перевод)</h2>", unsafe_allow_html=True)
+qr = st.session_state.get("quality_report")
+if not qr:
+    st.caption(
+        "Здесь появится отчёт после первого перевода на туркменский. "
+        "Quality Gate проверяет 6 показателей: качество, смысл, чистоту языка, стиль, эмоцию, тайминг. "
+        "Порог preview — 95, production — 98. Ниже 95 — автоматический repair и повторная проверка."
+    )
+else:
+    badge_class = "ok" if qr.get("passed_preview") else ""
+    badge_text = "PASS preview" if qr.get("passed_preview") else "ниже порога — repaired"
+    prod_text = "PASS production" if qr.get("passed_production") else "не для production"
+    st.markdown(
+        f"<span class='pill {badge_class}'>Quality: {qr.get('quality_score', 0)} / 100</span>"
+        f"<span class='pill'>{badge_text}</span>"
+        f"<span class='pill'>{prod_text}</span>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<span class='pill'>Смысл: {qr.get('meaning_match', 0)}</span>"
+        f"<span class='pill'>Чистота языка: {qr.get('language_purity', 0)}</span>"
+        f"<span class='pill'>Стиль: {qr.get('style_match', 0)}</span>"
+        f"<span class='pill'>Эмоция: {qr.get('emotion_match', 0)}</span>"
+        f"<span class='pill'>Тайминг: {qr.get('timing_fit', 0)}</span>",
+        unsafe_allow_html=True,
+    )
+    issues = qr.get("issues") or []
+    if issues:
+        st.markdown("**Найденные проблемы:**")
+        for issue in issues:
+            st.markdown(f"- {issue}")
+    else:
+        st.caption("Проблем не найдено.")
+    fixed = qr.get("fixed_text") or ""
+    if fixed and fixed != st.session_state.result_text:
+        st.markdown("**Исправленная версия:**")
+        st.code(fixed, language=None)
+        if st.button("Применить исправленную версию", key="btn_apply_fixed"):
+            st.session_state.result_text = fixed
+            st.rerun()
 st.markdown("</div>", unsafe_allow_html=True)
 
 
