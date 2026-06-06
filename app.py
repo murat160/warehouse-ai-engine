@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "no-duplicate-player / 2026-06-07 / progress-top + auto-pipeline"
+BUILD = "iframe-isolation / 2026-06-07-v2 / one-block-render"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -478,14 +478,11 @@ def project_json() -> bytes:
 # UI-хелперы.
 # ---------------------------------------------------------------------------
 def render_device_placeholder(label: str, fmt: Dict[str, str], screen: Dict[str, Any]) -> None:
-    """Пустая видеорамка: device chrome с aspect-ratio устройства + placeholder."""
+    """Пустая видеорамка: device chrome с placeholder-текстом."""
 
     media = (
-        f"<div class='device-content' style='color:#dbeafe;font-size:14px;font-weight:900;"
-        f"text-align:center;padding:14px;line-height:1.4'>"
-        f"{label}<br>"
-        f"<span style='color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px'>"
-        f"{fmt['label']} · {screen['label']}</span>"
+        f"<div class='device-content'>"
+        f"{label}<br><span>{fmt['label']} · {screen['label']}</span>"
         f"</div>"
     )
     render_device_with_media(screen, media)
@@ -505,24 +502,73 @@ def render_device_video_close() -> None:
     pass
 
 
-def render_device_with_media(screen: Dict[str, Any], media_html: str) -> None:
-    """Встраивает device frame + media в ОДИН st.markdown.
+_FRAME_IFRAME_CSS = """
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100%;height:100%}
+.video-frame{
+  width:100%;height:380px;display:flex;align-items:center;justify-content:center;
+  background:#0b1220;border-radius:16px;padding:10px;border:1px solid rgba(255,255,255,.06)
+}
+.device{height:100%;max-width:100%;position:relative;display:flex;align-items:center;justify-content:center}
+.device-inner{
+  width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative
+}
+.device-inner > * {width:100%;height:100%;border:0}
+.device-inner video, .device-inner img {width:100%;height:100%;object-fit:contain;background:#000}
+.device-inner iframe {width:100%;height:100%;border:0;background:#000}
+.device-inner a.yt-preview {display:block;width:100%;height:100%;position:relative;cursor:pointer}
+.device-inner a.yt-preview img {width:100%;height:100%;object-fit:cover;background:#000}
+.device-inner a.yt-preview .yt-play {
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.7);
+  display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;
+  border:3px solid rgba(255,255,255,.85)
+}
+.device-content{color:#dbeafe;font-size:14px;font-weight:900;text-align:center;padding:14px;line-height:1.4}
+.device-content span{color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px}
+/* Device chrome — рамки устройств */
+.device-phone-v   .device-inner{border:8px solid #111;border-radius:26px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.device-phone-v::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:60px;height:12px;background:#000;border-radius:0 0 10px 10px;z-index:5}
+.device-phone-h   .device-inner{border:8px solid #111;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.device-phone-h::before{content:"";position:absolute;left:6px;top:50%;transform:translateY(-50%);width:12px;height:60px;background:#000;border-radius:10px 0 0 10px;z-index:5}
+.device-tablet    .device-inner{border:12px solid #1a1a1a;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.device-laptop    .device-inner{border:8px solid #2b2b2b;border-top-width:18px;border-radius:12px 12px 4px 4px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.device-monitor   .device-inner{border:10px solid #1a1a1a;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.device-tv        .device-inner{border:14px solid #050505;border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.55)}
+.device-bare      .device-inner{border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.progress-card{
+  width:100%;height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:24px;color:#dbeafe;text-align:center
+}
+.progress-card .stage{font-size:13px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
+.progress-card .step{font-size:15px;font-weight:900;margin-bottom:14px}
+.progress-card .bar{width:80%;height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden}
+.progress-card .bar > div{height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s}
+.progress-card .eta{font-size:12px;color:#cbd5e1;margin-top:10px}
+"""
 
-    КРИТИЧНО: НЕ использовать components.html — он рендерит iframe ПОД
-    предыдущим st.markdown, из-за чего рамка пустая сверху, плеер снизу.
-    Через st.markdown(unsafe_allow_html=True) всё рисуется одним блоком.
+
+def render_device_with_media(screen: Dict[str, Any], media_html: str) -> None:
+    """Встраивает device frame + media в ОДИН isolated iframe через components.html.
+
+    Streamlit с unsafe_allow_html=True разбивает каждый st.markdown на свой
+    DOM-wrapper, поэтому вложенные <video>/<iframe>/<img> выпадают наружу
+    рамки. components.html рендерит всё внутри одного iframe — никакие
+    Streamlit-wrappers и bleach-фильтры не мешают.
     """
 
-    html = f"""
+    aspect = screen.get("device_ratio", "16/10")
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset='utf-8'><style>{_FRAME_IFRAME_CSS}</style></head>
+<body>
 <div class='video-frame'>
-  <div class='device device-{screen['kind']}'>
-    <div class='device-inner'>
-      {media_html}
-    </div>
+  <div class='device device-{screen['kind']}' style='aspect-ratio:{aspect}'>
+    <div class='device-inner'>{media_html}</div>
   </div>
 </div>
-"""
-    st.markdown(html, unsafe_allow_html=True)
+</body></html>"""
+    components.html(html, height=400, scrolling=False)
 
 
 def _youtube_id(url: str) -> str:
@@ -534,19 +580,14 @@ def _youtube_id(url: str) -> str:
 
 
 def render_device_youtube(screen: Dict[str, Any], youtube_id: str, url: str = "") -> None:
-    """YouTube preview ВНУТРИ device frame. Используем thumbnail + кнопку-ссылку
-    (iframe фильтруется bleach в Streamlit markdown)."""
+    """YouTube embed ВНУТРИ device frame. Внутри iframe Streamlit'а
+    YouTube-iframe работает свободно — bleach его не фильтрует."""
 
-    thumb = f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
+    embed_url = f"https://www.youtube.com/embed/{youtube_id}?rel=0&modestbranding=1"
     media = (
-        f"<a href='{url or 'https://youtu.be/' + youtube_id}' target='_blank' "
-        f"class='yt-preview' style='display:block;width:100%;height:100%;position:relative'>"
-        f"<img src='{thumb}' alt='YouTube preview' "
-        f"style='width:100%;height:100%;object-fit:cover'/>"
-        f"<span style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);"
-        f"width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.7);"
-        f"display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff'>▶</span>"
-        f"</a>"
+        f"<iframe src='{embed_url}' "
+        f"allow='accelerometer; autoplay; clipboard-write; encrypted-media; "
+        f"gyroscope; picture-in-picture' allowfullscreen></iframe>"
     )
     render_device_with_media(screen, media)
 
@@ -554,10 +595,7 @@ def render_device_youtube(screen: Dict[str, Any], youtube_id: str, url: str = ""
 def render_device_video_url(screen: Dict[str, Any], video_url: str) -> None:
     """HTML5 video внутри device frame для скачанного MP4."""
 
-    video = (
-        f"<video src='{video_url}' controls preload='metadata' "
-        f"style='width:100%;height:100%;object-fit:contain;background:#000'></video>"
-    )
+    video = f"<video src='{video_url}' controls preload='metadata'></video>"
     render_device_with_media(screen, video)
 
 
@@ -568,17 +606,14 @@ def render_device_video_data_url(screen: Dict[str, Any], video_bytes: bytes, mim
     if not video_bytes:
         return
     b64 = _b64.b64encode(video_bytes).decode("ascii")
-    video = (
-        f"<video src='data:{mime};base64,{b64}' controls preload='metadata' "
-        f"style='width:100%;height:100%;object-fit:contain;background:#000'></video>"
-    )
+    video = f"<video src='data:{mime};base64,{b64}' controls preload='metadata'></video>"
     render_device_with_media(screen, video)
 
 
 def render_device_image(screen: Dict[str, Any], image_url: str) -> None:
     """Thumbnail внутри device frame."""
 
-    img = f"<img src='{image_url}' alt='thumbnail' style='width:100%;height:100%;object-fit:cover'/>"
+    img = f"<img src='{image_url}' alt='thumbnail'/>"
     render_device_with_media(screen, img)
 
 
@@ -589,14 +624,11 @@ def render_device_progress(screen: Dict[str, Any], stage: str, percent: int, eta
     secs = max(0, eta_sec % 60)
     eta_label = f"~{mins} мин {secs} сек" if mins else f"~{secs} сек"
     media = (
-        f"<div style='width:100%;height:100%;display:flex;flex-direction:column;"
-        f"align-items:center;justify-content:center;padding:24px;color:#dbeafe;text-align:center'>"
-        f"<div style='font-size:13px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px'>Генерация на VPS</div>"
-        f"<div style='font-size:15px;font-weight:900;margin-bottom:14px'>{stage}</div>"
-        f"<div style='width:80%;height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden'>"
-        f"<div style='width:{percent}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>"
-        f"</div>"
-        f"<div style='font-size:12px;color:#cbd5e1;margin-top:10px'>{percent}% · осталось {eta_label}</div>"
+        f"<div class='progress-card'>"
+        f"<div class='stage'>Генерация на VPS</div>"
+        f"<div class='step'>{stage}</div>"
+        f"<div class='bar'><div style='width:{percent}%'></div></div>"
+        f"<div class='eta'>{percent}% · осталось {eta_label}</div>"
         f"</div>"
     )
     render_device_with_media(screen, media)
@@ -687,57 +719,14 @@ st.markdown(
 
     .stButton>button, .stDownloadButton>button {{border-radius:12px!important;font-weight:800!important}}
 
-    /* === ВЫРАВНИВАНИЕ: рамки и стрелка одной высоты === */
-    .video-frame {{
-        width:100%;height:380px;display:flex;align-items:center;justify-content:center;
-        background:#0b1220;border-radius:16px;padding:10px;box-sizing:border-box;
-        margin:0 auto 14px;border:1px solid rgba(255,255,255,.06)
-    }}
+    /* === Стрелка между рамками. Сами рамки рисуются внутри iframe (components.html) === */
     .arrow-col {{
-        height:380px;display:flex;align-items:center;justify-content:center;
-        margin:0 auto 14px
+        height:400px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px
     }}
     .arrow-mark {{
         font-size:54px;color:#a78bfa;font-weight:900;line-height:1;
         text-shadow:0 4px 18px rgba(124,58,237,.55)
     }}
-
-    /* === Device chrome (центрируется внутри .video-frame) === */
-    .device {{
-        height:100%;max-width:100%;position:relative;
-        display:flex;align-items:center;justify-content:center;aspect-ratio:16/10
-    }}
-    .device-inner {{
-        width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);
-        display:flex;align-items:center;justify-content:center;
-        overflow:hidden;position:relative
-    }}
-    /* Любой медиа-элемент внутри device-inner полностью заполняет рамку */
-    .device-inner video, .device-inner img, .device-inner a, .device-inner > div {{
-        width:100%;height:100%
-    }}
-    .device-inner video, .device-inner a img {{
-        object-fit:contain;background:#000
-    }}
-    .yt-preview {{display:block;width:100%;height:100%;position:relative}}
-    .yt-preview img {{object-fit:cover!important}}
-    .device-content {{color:#dbeafe;font-size:14px;font-weight:900;text-align:center;padding:14px;line-height:1.4}}
-    .device-content span {{color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px}}
-
-    .device-phone-v   .device-inner {{border:8px solid #111;border-radius:26px;box-shadow:0 10px 30px rgba(0,0,0,.45)}}
-    .device-phone-v::before {{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:60px;height:12px;background:#000;border-radius:0 0 10px 10px;z-index:5}}
-    .device-phone-h   .device-inner {{border:8px solid #111;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.45)}}
-    .device-phone-h::before {{content:"";position:absolute;left:6px;top:50%;transform:translateY(-50%);width:12px;height:60px;background:#000;border-radius:10px 0 0 10px;z-index:5}}
-    .device-tablet    .device-inner {{border:12px solid #1a1a1a;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.45)}}
-    .device-laptop    .device-inner {{border:8px solid #2b2b2b;border-top-width:18px;border-radius:12px 12px 4px 4px;box-shadow:0 10px 30px rgba(0,0,0,.45)}}
-    .device-monitor   .device-inner {{border:10px solid #1a1a1a;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.45)}}
-    .device-tv        .device-inner {{border:14px solid #050505;border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.55)}}
-    .device-bare      .device-inner {{border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35)}}
-
-    /* Когда внутри Streamlit video — занимает всю device-inner */
-    .device-inner-video {{padding:0}}
-    .device-inner-video + div [data-testid="stVideo"] {{width:100%}}
-    .device-inner-video [data-testid="stVideo"] video {{width:100%;height:100%;object-fit:contain}}
 
     /* === Русский для file_uploader === */
     [data-testid="stFileUploaderDropzoneInstructions"] > div > span {{display:none}}
