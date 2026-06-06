@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "streamlit-light-preview / 2026-05-25-00:30 / quality-gate"
+BUILD = "studio-backend-pipeline / 2026-05-25-01:00 / one-button"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -65,7 +65,17 @@ SCREENS: Dict[str, Dict[str, Any]] = {
     "🟦 Без рамки":              {"device_ratio": "16 / 9",   "kind": "bare",    "label": "Без рамки"},
 }
 
-QUALITIES = ["1080p", "4K", "8K"]
+QUALITIES = [
+    "Auto",
+    "360p",
+    "480p",
+    "720p HD",
+    "1080p Full HD",
+    "1440p / 2K",
+    "2160p / 4K",
+    "4320p / 8K",
+    "Original",
+]
 
 EMOTIONS = [
     "Автоматически по оригиналу",
@@ -158,6 +168,9 @@ def init_state() -> None:
         "analysis": asdict(EmotionProfile()),
         "voice_profile": None,
         "quality_report": None,
+        "job_id": "",
+        "job_status": None,
+        "url_preview": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -642,6 +655,34 @@ st.markdown(
 )
 
 
+# === Backend status bar =====================================================
+def _backend_status():
+    try:
+        from src.backend_client import backend_url, healthz, is_configured  # type: ignore
+        return is_configured(), backend_url(), healthz()
+    except Exception:  # noqa: BLE001
+        return False, "", {"ok": False}
+
+
+_bk_ok, _bk_url, _bk_health = _backend_status()
+if _bk_ok and _bk_health.get("ok"):
+    st.markdown(
+        f"<div class='pill ok'>VPS backend подключён: {_bk_url}</div>",
+        unsafe_allow_html=True,
+    )
+elif _bk_ok:
+    st.warning(
+        f"BACKEND_URL задан ({_bk_url}), но backend не отвечает на /healthz. "
+        "Проверь что FastAPI поднят на VPS: `uvicorn backend.main:app --host 0.0.0.0 --port 8000`."
+    )
+else:
+    st.info(
+        "Preview-режим: VPS backend не подключён. UI работает, но реальная обработка "
+        "(скачивание YouTube, ASR, MMS-TTS, рендер MP4) делается на VPS. "
+        "Добавь `BACKEND_URL=https://your-vps-domain.com` в Streamlit Secrets, чтобы включить обработку."
+    )
+
+
 # === Компактная панель настроек (НАВЕРХУ, не между видео) ===================
 st.markdown("<div class='card'><h2>⚙️ Настройки проекта</h2>", unsafe_allow_html=True)
 
@@ -661,7 +702,7 @@ screen_name = s1[1].selectbox(
 )
 
 s2 = st.columns(5)
-quality   = s2[0].selectbox("Качество MP4", QUALITIES, index=1, key="ui_quality")
+quality   = s2[0].selectbox("Качество готового видео", QUALITIES, index=4, key="ui_quality", help="Auto = выбрать максимально доступное. Если источник ниже выбранного — будет апскейл (не настоящее 4K/8K).")
 src_lang  = s2[1].selectbox("С языка", list(LANGS.keys()), format_func=lambda c: LANGS[c], key="ui_src")
 dst_lang  = s2[2].selectbox("На язык", list(LANGS.keys()), index=1, format_func=lambda c: LANGS[c], key="ui_dst")
 voice_sel = s2[3].selectbox(
@@ -732,10 +773,32 @@ with left:
         st.session_state.video_bytes = None
         st.session_state.video_name = ""
         st.session_state.result_ready = False
+        try:
+            from src.backend_client import is_configured, preview_url  # type: ignore
+            if is_configured() and st.session_state.video_url:
+                st.session_state.url_preview = preview_url(st.session_state.video_url)
+        except Exception:
+            pass
         st.rerun()
+    if st.session_state.get("url_preview"):
+        meta = (st.session_state.url_preview or {}).get("metadata") or {}
+        if meta:
+            st.caption(f"📺 {meta.get('title','')} · {meta.get('duration','')} сек · {meta.get('uploader','')}")
     if c2.button("Скачать видео по ссылке", use_container_width=True, key="btn_download_url"):
-        result = download_video_from_url(st.session_state.video_url)
-        st.info(result["message"])
+        try:
+            from src.backend_client import create_job, is_configured, start_job  # type: ignore
+            if is_configured() and st.session_state.video_url:
+                created = create_job(url=st.session_state.video_url, quality=quality, aspect=fmt["label"])
+                if created.get("id"):
+                    st.session_state.job_id = created["id"]
+                    start_job(created["id"])
+                    st.success(f"Скачивание запущено на VPS. Job: {created['id']}")
+                else:
+                    st.warning(created.get("message", "Не получилось создать job."))
+            else:
+                st.info("Подключи BACKEND_URL чтобы скачать ссылку через VPS (yt-dlp).")
+        except Exception as exc:
+            st.warning(f"Не получилось вызвать backend: {exc}")
 
     st.caption("Загрузить файл с устройства — MP4 / MOV / WEBM / MKV / M4V")
     up = st.file_uploader(
@@ -776,10 +839,48 @@ with right:
     else:
         render_device_placeholder("Здесь появится готовое видео", fmt, screen)
 
-    if st.button("✨ Создать готовое видео", type="primary", use_container_width=True, key="btn_make_video"):
+    if st.button("✨ Создать готовое видео на туркменском", type="primary", use_container_width=True, key="btn_make_video"):
         st.session_state.analysis = asdict(analyze_emotion(st.session_state.source_text))
         st.session_state.result_text = translate_text(st.session_state.source_text, src_lang, dst_lang)
         st.session_state.result_ready = True
+
+        # Если backend подключён — запускаем настоящий pipeline.
+        try:
+            from src.backend_client import (  # type: ignore
+                create_job,
+                is_configured,
+                start_job,
+                upload_and_create_job,
+            )
+        except Exception:
+            is_configured = lambda: False  # type: ignore  # noqa: E731
+
+        if is_configured():
+            payload = {
+                "target_lang": "tk",
+                "quality": quality,
+                "aspect": fmt["label"],
+                "voice_mode": "auto",
+                "emotion_mode": "auto" if emotion_mode == "Автоматически по оригиналу" else f"manual:{emotion_mode}",
+                "style": "cultural",
+            }
+            if st.session_state.video_bytes:
+                created = upload_and_create_job(
+                    st.session_state.video_bytes,
+                    st.session_state.video_name or "video.mp4",
+                    **payload,
+                )
+            else:
+                created = create_job(url=st.session_state.video_url, **payload)
+            if created.get("id"):
+                st.session_state.job_id = created["id"]
+                start_job(created["id"])
+                st.session_state.job_status = {"stage": "queued", "progress": 0}
+                st.success(f"Job создан: {created['id']}. Pipeline запущен на VPS.")
+            else:
+                st.warning(created.get("message") or "Backend не создал job.")
+        else:
+            st.info("Preview: BACKEND_URL не настроен — запустился только UI-сценарий. Реальный MP4 рендерится на VPS.")
         st.rerun()
 
     d1, d2 = st.columns(2)
@@ -886,7 +987,10 @@ with right:
     elif st.session_state.tts_audio_message:
         st.caption(st.session_state.tts_audio_message)
 
-    st.markdown("**Быстрая проверка интонации (браузерный голос — не MMS-TTS):**")
+    st.markdown(
+        "**⚠️ Это НЕ финальная озвучка — браузерный голос для проверки интонации.** "
+        "Финальный туркменский MMS-TTS делается на VPS backend (кнопка «Создать готовое видео»)."
+    )
     render_speak_button(
         st.session_state.result_text or st.session_state.source_text,
         "tk" if dst_lang == "tk" else dst_lang,
@@ -1015,6 +1119,44 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 
 # === Quality Report для туркменского перевода ================================
+# === Job Progress (если backend запустил pipeline) ==========================
+if st.session_state.get("job_id"):
+    st.markdown("<div class='card'><h2>⏳ Прогресс обработки на VPS</h2>", unsafe_allow_html=True)
+    try:
+        from src.backend_client import file_url, is_configured, job_result, job_status  # type: ignore
+        if is_configured():
+            status = job_status(st.session_state.job_id)
+            st.session_state.job_status = status
+            stage = status.get("stage", "queued")
+            progress = int(status.get("progress", 0))
+            st.progress(min(100, max(0, progress)) / 100.0)
+            st.markdown(
+                f"<span class='pill ok'>Job: {st.session_state.job_id}</span>"
+                f"<span class='pill'>Стадия: {stage}</span>"
+                f"<span class='pill'>{progress}%</span>",
+                unsafe_allow_html=True,
+            )
+            if status.get("message"):
+                st.caption(status["message"])
+            if status.get("error"):
+                st.error(status["error"])
+            if stage == "done":
+                res = job_result(st.session_state.job_id)
+                final_path = (res.get("result") or {}).get("final_path", "")
+                if final_path:
+                    name = final_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+                    st.success(f"Готово! Финальный файл: {name}")
+                    st.markdown(f"[⬇ Скачать MP4]({file_url(st.session_state.job_id, name)})")
+            if st.button("Обновить статус", key="btn_refresh_job"):
+                st.rerun()
+        else:
+            st.info("BACKEND_URL не настроен — статус job недоступен. Сбрось job_id или подключи backend.")
+    except Exception as exc:
+        st.warning(f"Не могу получить статус: {exc}")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# === Quality Report ==========================================================
 st.markdown("<div class='card'><h2>✅ Quality Report (туркменский перевод)</h2>", unsafe_allow_html=True)
 qr = st.session_state.get("quality_report")
 if not qr:

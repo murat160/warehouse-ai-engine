@@ -36,3 +36,13 @@ numpy>=1.26.0
 yt-dlp>=2025.1.1
 ffmpeg-python==0.2.0
 langdetect==1.0.9
+
+# --- Voice cloning / cleanup ---
+pydub>=0.25,<1.0
+librosa>=0.10,<1.0
+noisereduce>=3.0,<4.0
+pyloudnorm>=0.1,<1.0
+
+# --- FastAPI extras ---
+python-multipart>=0.0.9,<1.0
+accelerate>=0.30,<2.0
