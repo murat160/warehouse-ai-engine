@@ -183,12 +183,31 @@ def video_inspect_url(body: InspectUrlIn) -> Dict[str, Any]:
             elif h <= 2160: qualities.append("2160p / 4K")
             else: qualities.append("4320p / 8K")
         qualities = sorted(set(qualities), key=_quality_to_height)
+        # Определяем формат (aspect ratio) по width/height.
+        width = int(info.get("width") or 0)
+        height = int(info.get("height") or 0)
+        aspect = ""
+        fmt_label = "Original"
+        if width and height:
+            ratio = width / height
+            if ratio < 0.7:
+                aspect = "9:16"; fmt_label = "9:16 Shorts / Reels / TikTok"
+            elif ratio < 1.1:
+                aspect = "1:1";  fmt_label = "1:1 Square"
+            elif ratio < 2.5:
+                aspect = "16:9"; fmt_label = "16:9 YouTube"
+            else:
+                aspect = "Original"; fmt_label = "Original"
         return {
             "ok": True,
             "title": info.get("title") or "",
             "duration": int(info.get("duration") or 0),
             "thumbnail": info.get("thumbnail") or "",
             "uploader": info.get("uploader") or "",
+            "width": width,
+            "height": height,
+            "aspect_ratio": aspect,
+            "detected_format": fmt_label,
             "available_qualities": qualities,
             "source_platform": (info.get("extractor") or "").lower(),
             "is_downloadable": True,

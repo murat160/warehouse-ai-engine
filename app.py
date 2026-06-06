@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "real-video-pipeline / 2026-05-25-01:30 / inspect-download-process"
+BUILD = "video-in-frame / 2026-05-25-02:00 / autoformat"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -513,6 +513,90 @@ def render_device_video_close() -> None:
     st.markdown("</div></div></div>", unsafe_allow_html=True)
 
 
+_FRAME_INNER_CSS = """
+<style>
+html,body{margin:0;padding:0;background:transparent}
+.video-frame{width:100%;height:380px;display:flex;align-items:center;justify-content:center;background:#0b1220;border-radius:16px;padding:10px;box-sizing:border-box;border:1px solid rgba(255,255,255,.08)}
+.device{max-height:100%;max-width:100%;position:relative;display:flex;align-items:center;justify-content:center}
+.device-inner{width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.device-inner video,.device-inner iframe,.device-inner img{width:100%;height:100%;object-fit:contain;border:0;background:#000}
+.device-phone-v   .device-inner{border:8px solid #111;border-radius:26px}
+.device-phone-v::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:60px;height:12px;background:#000;border-radius:0 0 10px 10px;z-index:5}
+.device-phone-h   .device-inner{border:8px solid #111;border-radius:20px}
+.device-tablet    .device-inner{border:12px solid #1a1a1a;border-radius:18px}
+.device-laptop    .device-inner{border:8px solid #2b2b2b;border-top-width:18px;border-radius:12px 12px 4px 4px}
+.device-monitor   .device-inner{border:10px solid #1a1a1a;border-radius:8px}
+.device-tv        .device-inner{border:14px solid #050505;border-radius:12px}
+.device-bare      .device-inner{border-radius:12px}
+</style>
+"""
+
+
+def render_device_with_media(screen: Dict[str, Any], media_html: str) -> None:
+    """Встраивает device frame + media (video/iframe/img) в ОДНОМ html-блоке.
+
+    Streamlit st.video() не оборачивается в st.markdown <div>, поэтому видео
+    рендерилось отдельно от рамки. Здесь рисуем ВСЁ через components.html
+    в одном iframe — рамка и видео всегда вместе.
+    """
+
+    html = f"""
+    {_FRAME_INNER_CSS}
+    <div class='video-frame'>
+        <div class='device device-{screen['kind']}' style='aspect-ratio:{screen['device_ratio']}'>
+            <div class='device-inner'>
+                {media_html}
+            </div>
+        </div>
+    </div>
+    """
+    components.html(html, height=400)
+
+
+def _youtube_id(url: str) -> str:
+    import re as _re
+    if not url:
+        return ""
+    m = _re.search(r"(?:youtube\.com/(?:watch\?v=|shorts/|embed/)|youtu\.be/)([\w\-]+)", url)
+    return m.group(1) if m else ""
+
+
+def render_device_youtube(screen: Dict[str, Any], youtube_id: str) -> None:
+    """YouTube embed внутри device frame."""
+
+    iframe = (
+        f"<iframe src='https://www.youtube.com/embed/{youtube_id}' "
+        "allow='accelerometer; autoplay; clipboard-write; encrypted-media; "
+        "gyroscope; picture-in-picture' allowfullscreen></iframe>"
+    )
+    render_device_with_media(screen, iframe)
+
+
+def render_device_video_url(screen: Dict[str, Any], video_url: str) -> None:
+    """HTML5 video внутри device frame для скачанного MP4."""
+
+    video = f"<video src='{video_url}' controls preload='metadata'></video>"
+    render_device_with_media(screen, video)
+
+
+def render_device_video_data_url(screen: Dict[str, Any], video_bytes: bytes, mime: str = "video/mp4") -> None:
+    """Локально загруженное видео — через data URL внутри device frame."""
+
+    import base64 as _b64
+    if not video_bytes:
+        return
+    b64 = _b64.b64encode(video_bytes).decode("ascii")
+    video = f"<video src='data:{mime};base64,{b64}' controls preload='metadata'></video>"
+    render_device_with_media(screen, video)
+
+
+def render_device_image(screen: Dict[str, Any], image_url: str) -> None:
+    """Thumbnail внутри device frame."""
+
+    img = f"<img src='{image_url}' alt='thumbnail'/>"
+    render_device_with_media(screen, img)
+
+
 def render_arrow() -> None:
     st.markdown("<div class='arrow-col'><div class='arrow-mark'>→</div></div>", unsafe_allow_html=True)
 
@@ -696,12 +780,33 @@ else:
 # === Компактная панель настроек (НАВЕРХУ, не между видео) ===================
 st.markdown("<div class='card'><h2>⚙️ Настройки проекта</h2>", unsafe_allow_html=True)
 
+
+# Авто-выбор формата по URL / metadata от backend.
+def _auto_fmt_default() -> int:
+    """Возвращает index в FORMATS.keys()."""
+
+    fmt_list = list(FORMATS.keys())
+    # 1) metadata от inspect-url имеет приоритет.
+    preview = st.session_state.get("url_preview") or {}
+    detected = preview.get("detected_format")
+    if detected and detected in fmt_list:
+        return fmt_list.index(detected)
+    # 2) Эвристика по URL (shorts/reels/tiktok = 9:16).
+    url_low = (st.session_state.get("video_url") or "").lower()
+    if any(t in url_low for t in ["shorts/", "reels/", "tiktok.com", "instagram.com/p/", "instagram.com/reel/"]):
+        return 0  # 9:16
+    if any(t in url_low for t in ["youtube.com/watch", "youtu.be/", "vimeo.com"]):
+        return 1  # 16:9
+    return 0  # default 9:16
+
+
 s1 = st.columns(2)
 fmt_name = s1[0].selectbox(
-    "🎬 Формат готового видео",
+    "🎬 Формат готового видео (определяется автоматически из ссылки)",
     list(FORMATS.keys()),
+    index=_auto_fmt_default(),
     key="ui_fmt",
-    help="Соотношение сторон самого видео — 9:16, 16:9, 1:1 или Original.",
+    help="Если вставить YouTube Shorts / Reels / TikTok → автоматически 9:16. Обычное YouTube видео → 16:9. Можно изменить вручную.",
 )
 screen_name = s1[1].selectbox(
     "🖥 Экран просмотра",
@@ -759,26 +864,23 @@ left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="to
 with left:
     st.markdown("<div class='card'><h2>📥 Исходное видео</h2>", unsafe_allow_html=True)
 
-    # Видео-рамка: ПОКАЗЫВАЕМ ИМЕННО СКАЧАННЫЙ MP4 С BACKEND, не YouTube iframe.
+    # Видео-рамка слева: МЕДИА ВНУТРИ device frame (один HTML-блок).
     try:
         from src.backend_client import absolute_url, is_configured  # type: ignore
     except Exception:
         absolute_url = lambda x: x  # type: ignore  # noqa: E731
         is_configured = lambda: False  # type: ignore  # noqa: E731
 
+    _yt_id = _youtube_id(st.session_state.video_url)
     if st.session_state.source_video_url and is_configured():
-        render_device_video_open(screen)
-        st.video(absolute_url(st.session_state.source_video_url))
-        render_device_video_close()
+        render_device_video_url(screen, absolute_url(st.session_state.source_video_url))
     elif st.session_state.video_bytes:
-        render_device_video_open(screen)
-        st.video(st.session_state.video_bytes)
-        render_device_video_close()
+        render_device_video_data_url(screen, st.session_state.video_bytes)
+    elif _yt_id:
+        # До скачивания показываем YouTube embed ВНУТРИ device frame.
+        render_device_youtube(screen, _yt_id)
     elif st.session_state.get("url_preview", {}).get("thumbnail"):
-        # Показываем thumbnail из inspect-url до скачивания.
-        render_device_video_open(screen)
-        st.image(st.session_state["url_preview"]["thumbnail"], use_container_width=True)
-        render_device_video_close()
+        render_device_image(screen, st.session_state["url_preview"]["thumbnail"])
     else:
         render_device_placeholder("Сначала вставьте ссылку или загрузите файл", fmt, screen)
 
@@ -904,16 +1006,14 @@ with mid:
 with right:
     st.markdown("<div class='card'><h2>📤 Готовое видео</h2>", unsafe_allow_html=True)
 
-    # Видео-рамка: показываем именно ГОТОВЫЙ MP4 с backend.
+    # Видео-рамка справа: готовый MP4 ВНУТРИ device frame.
     try:
         from src.backend_client import absolute_url as _abs_url  # type: ignore
     except Exception:
         _abs_url = lambda x: x  # type: ignore  # noqa: E731
 
     if st.session_state.final_video_url:
-        render_device_video_open(screen)
-        st.video(_abs_url(st.session_state.final_video_url))
-        render_device_video_close()
+        render_device_video_url(screen, _abs_url(st.session_state.final_video_url))
     else:
         render_device_placeholder("Готовое видео появится здесь", fmt, screen)
 
