@@ -24,12 +24,12 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "turkmen-tts-real-100 / 2026-05-24-23:00"
+BUILD = "murat-ai-studio / 2026-05-24-23:30"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
     page_title="Murat AI Studio",
-    page_icon="🎬",
+    page_icon="🌐",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -390,7 +390,7 @@ def render_final_video(
 # Утилиты экспорта.
 # ---------------------------------------------------------------------------
 def srt(text: str) -> str:
-    parts = [p.strip() for p in re.split(r"[.!?\n]+", text or "") if p.strip()] or ["Murat AI"]
+    parts = [p.strip() for p in re.split(r"[.!?\n]+", text or "") if p.strip()] or ["Murat AI Studio"]
     rows, sec = [], 0
     for i, part in enumerate(parts, 1):
         rows.append(f"{i}\n00:00:{sec:02d},000 --> 00:00:{sec + 4:02d},000\n{part}\n")
@@ -600,8 +600,8 @@ st.markdown(
 
     <div class="build">BUILD: {BUILD}</div>
     <div class="hero">
-        <h1>🎬 Murat AI Studio</h1>
-        <p>Слева вход → справа результат. Перевод, туркменская озвучка, готовый MP4.</p>
+        <h1>🌐 Murat AI Studio</h1>
+        <p>Профессиональная студия перевода, озвучки и дубляжа видео на туркменский язык.</p>
     </div>
     """,
     unsafe_allow_html=True,

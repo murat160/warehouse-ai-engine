@@ -74,12 +74,13 @@ def build_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(
-        title="warehouse-ai-engine",
+        title="Murat AI Studio",
         version=__version__,
         description=(
-            "AI translation / STT / TTS / dubbing engine for ru/tk/tr/en. "
-            "Supports user glossary, translation memory, channels (AI agents), "
-            "15 styles, 16 tones, 7 emotions and 23 voice profiles."
+            "Murat AI Studio — профессиональная студия перевода, озвучки и дубляжа "
+            "видео на туркменский язык. ru/tk/tr/en. "
+            "User glossary, translation memory, channels (AI agents), "
+            "15 styles, 16 tones, 7 emotions, 23 voice profiles."
         ),
     )
     app.add_middleware(

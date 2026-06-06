@@ -1,7 +1,7 @@
 # Streamlit Cloud preview requirements for Murat AI Studio.
 # Включаем настоящий MMS-TTS (туркменский) в preview — CPU-only torch.
 # Full AI/VPS stack — в requirements-full.txt.
-# rebuild-marker: 2026-05-24-23:00 (turkmen-tts-real-100)
+# rebuild-marker: 2026-05-24-23:30 (murat-ai-studio)
 
 # --- Core ---
 pydantic>=2.6,<3.0
