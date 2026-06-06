@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "DIRECT-PLAYER-NO-FRAME / 2026-06-07-v3 / stvideo-only"
+BUILD = "render-video-device / 2026-06-07-v4 / all-in-one-iframe"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -477,36 +477,24 @@ def project_json() -> bytes:
 # ---------------------------------------------------------------------------
 # UI-хелперы.
 # ---------------------------------------------------------------------------
-def render_device_placeholder(label: str, fmt: Dict[str, str], screen: Dict[str, Any]) -> None:
-    """Пустая видеорамка: device chrome с placeholder-текстом."""
-
-    media = (
-        f"<div class='device-content'>"
-        f"{label}<br><span>{fmt['label']} · {screen['label']}</span>"
-        f"</div>"
-    )
-    render_device_with_media(screen, media)
+# Старые render_device_* функции удалены. Используй render_video_device(...).
 
 
-def render_device_video_open(screen: Dict[str, Any]) -> None:
-    """DEPRECATED — оставлено только для back-compat. НЕ ИСПОЛЬЗОВАТЬ.
-    Streamlit st.video() не оборачивается в st.markdown div, и плеер
-    выпадает наружу рамки. Используй render_device_video_url / data_url."""
+_DEVICE_HEIGHT = {
+    "phone-v":  600,
+    "phone-h":  340,
+    "tablet":   520,
+    "laptop":   440,
+    "monitor":  440,
+    "tv":       420,
+    "bare":     420,
+}
 
-    pass
-
-
-def render_device_video_close() -> None:
-    """DEPRECATED — см. render_device_video_open."""
-
-    pass
-
-
-_FRAME_IFRAME_CSS = """
+_VIDEO_DEVICE_CSS = """
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100%;height:100%}
 .video-frame{
-  width:100%;height:380px;display:flex;align-items:center;justify-content:center;
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   background:#0b1220;border-radius:16px;padding:10px;border:1px solid rgba(255,255,255,.06)
 }
 .device{height:100%;max-width:100%;position:relative;display:flex;align-items:center;justify-content:center}
@@ -514,19 +502,24 @@ html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100%;h
   width:100%;height:100%;background:linear-gradient(180deg,#111827,#1e1b4b);
   display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative
 }
-.device-inner > * {width:100%;height:100%;border:0}
-.device-inner video, .device-inner img {width:100%;height:100%;object-fit:contain;background:#000}
-.device-inner iframe {width:100%;height:100%;border:0;background:#000}
-.device-inner a.yt-preview {display:block;width:100%;height:100%;position:relative;cursor:pointer}
-.device-inner a.yt-preview img {width:100%;height:100%;object-fit:cover;background:#000}
-.device-inner a.yt-preview .yt-play {
-  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.7);
-  display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;
-  border:3px solid rgba(255,255,255,.85)
+.device-inner > * {width:100%;height:100%}
+.device-inner video,.device-inner iframe,.device-inner img {
+  width:100%;height:100%;object-fit:contain;background:#000;border:0
 }
-.device-content{color:#dbeafe;font-size:14px;font-weight:900;text-align:center;padding:14px;line-height:1.4}
-.device-content span{color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px}
+.placeholder{
+  color:#dbeafe;font-size:14px;font-weight:900;text-align:center;
+  padding:14px;line-height:1.4;display:flex;flex-direction:column;justify-content:center
+}
+.placeholder span{color:#a78bfa;font-weight:700;font-size:11px;display:block;margin-top:6px}
+.progress-card{
+  width:100%;height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:20px;color:#dbeafe;text-align:center
+}
+.progress-card .stage{font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px}
+.progress-card .step{font-size:15px;font-weight:900;margin-bottom:14px;line-height:1.3}
+.progress-card .bar{width:85%;height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden}
+.progress-card .bar > div{height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s}
+.progress-card .eta{font-size:12px;color:#cbd5e1;margin-top:10px}
 /* Device chrome — рамки устройств */
 .device-phone-v   .device-inner{border:8px solid #111;border-radius:26px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
 .device-phone-v::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:60px;height:12px;background:#000;border-radius:0 0 10px 10px;z-index:5}
@@ -537,38 +530,80 @@ html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100%;h
 .device-monitor   .device-inner{border:10px solid #1a1a1a;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
 .device-tv        .device-inner{border:14px solid #050505;border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.55)}
 .device-bare      .device-inner{border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
-.progress-card{
-  width:100%;height:100%;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;padding:24px;color:#dbeafe;text-align:center
-}
-.progress-card .stage{font-size:13px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
-.progress-card .step{font-size:15px;font-weight:900;margin-bottom:14px}
-.progress-card .bar{width:80%;height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden}
-.progress-card .bar > div{height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s}
-.progress-card .eta{font-size:12px;color:#cbd5e1;margin-top:10px}
 """
 
 
-def render_device_with_media(screen: Dict[str, Any], media_html: str) -> None:
-    """Встраивает device frame + media в ОДИН isolated iframe через components.html.
+def render_video_device(
+    *,
+    mode: str,
+    fmt: Dict[str, str],
+    screen: Dict[str, Any],
+    video_url: str = "",
+    youtube_url: str = "",
+    placeholder_text: str = "",
+    progress: int = 0,
+    stage_label: str = "",
+    eta_sec: int = 0,
+) -> None:
+    """Единственная функция отрисовки видео-блока. Всё внутри ОДНОГО iframe.
 
-    Streamlit с unsafe_allow_html=True разбивает каждый st.markdown на свой
-    DOM-wrapper, поэтому вложенные <video>/<iframe>/<img> выпадают наружу
-    рамки. components.html рендерит всё внутри одного iframe — никакие
-    Streamlit-wrappers и bleach-фильтры не мешают.
+    mode:
+      - 'empty'           — пустая рамка с placeholder_text
+      - 'youtube_preview' — YouTube iframe внутри рамки (только до скачивания)
+      - 'source_mp4'      — HTML5 <video> для скачанного MP4 (backend URL)
+      - 'final_mp4'       — HTML5 <video> для готового туркменского MP4
+      - 'processing'      — прогресс-бар внутри рамки во время генерации
+
+    Никакого st.video, никаких st.markdown с media — Streamlit разваливает их.
+    Только components.html → один <iframe>, внутри полный HTML-документ.
     """
 
-    aspect = screen.get("device_ratio", "16/10")
+    kind = screen.get("kind", "monitor")
+    device_ratio = screen.get("device_ratio", "16/10")
+
+    if mode == "youtube_preview" and youtube_url:
+        yt_id = _youtube_id(youtube_url)
+        if yt_id:
+            embed = f"https://www.youtube.com/embed/{yt_id}?rel=0&modestbranding=1"
+            media_html = (
+                f"<iframe src='{embed}' "
+                f"allow='accelerometer; autoplay; clipboard-write; encrypted-media; "
+                f"gyroscope; picture-in-picture' allowfullscreen></iframe>"
+            )
+        else:
+            media_html = f"<div class='placeholder'>Не похоже на YouTube ссылку<br><span>{youtube_url}</span></div>"
+    elif mode in ("source_mp4", "final_mp4") and video_url:
+        media_html = f"<video src='{video_url}' controls preload='metadata'></video>"
+    elif mode == "processing":
+        mins = max(0, eta_sec // 60)
+        secs = max(0, eta_sec % 60)
+        eta_label = f"~{mins} мин {secs} сек" if mins else f"~{secs} сек"
+        media_html = (
+            f"<div class='progress-card'>"
+            f"<div class='stage'>Генерация туркменского видео</div>"
+            f"<div class='step'>{stage_label}</div>"
+            f"<div class='bar'><div style='width:{progress}%'></div></div>"
+            f"<div class='eta'>{progress}% · осталось {eta_label}</div>"
+            f"</div>"
+        )
+    else:  # empty / fallback
+        text = placeholder_text or "Здесь появится видео"
+        media_html = (
+            f"<div class='placeholder'>{text}"
+            f"<br><span>{fmt['label']} · {screen['label']}</span></div>"
+        )
+
     html = f"""<!DOCTYPE html>
-<html><head><meta charset='utf-8'><style>{_FRAME_IFRAME_CSS}</style></head>
+<html><head><meta charset='utf-8'><style>{_VIDEO_DEVICE_CSS}</style></head>
 <body>
 <div class='video-frame'>
-  <div class='device device-{screen['kind']}' style='aspect-ratio:{aspect}'>
+  <div class='device device-{kind}' style='aspect-ratio:{device_ratio}'>
     <div class='device-inner'>{media_html}</div>
   </div>
 </div>
 </body></html>"""
-    components.html(html, height=400, scrolling=False)
+
+    components.html(html, height=_DEVICE_HEIGHT.get(kind, 460), scrolling=False)
 
 
 def _youtube_id(url: str) -> str:
@@ -577,61 +612,6 @@ def _youtube_id(url: str) -> str:
         return ""
     m = _re.search(r"(?:youtube\.com/(?:watch\?v=|shorts/|embed/)|youtu\.be/)([\w\-]+)", url)
     return m.group(1) if m else ""
-
-
-def render_device_youtube(screen: Dict[str, Any], youtube_id: str, url: str = "") -> None:
-    """YouTube embed ВНУТРИ device frame. Внутри iframe Streamlit'а
-    YouTube-iframe работает свободно — bleach его не фильтрует."""
-
-    embed_url = f"https://www.youtube.com/embed/{youtube_id}?rel=0&modestbranding=1"
-    media = (
-        f"<iframe src='{embed_url}' "
-        f"allow='accelerometer; autoplay; clipboard-write; encrypted-media; "
-        f"gyroscope; picture-in-picture' allowfullscreen></iframe>"
-    )
-    render_device_with_media(screen, media)
-
-
-def render_device_video_url(screen: Dict[str, Any], video_url: str) -> None:
-    """HTML5 video внутри device frame для скачанного MP4."""
-
-    video = f"<video src='{video_url}' controls preload='metadata'></video>"
-    render_device_with_media(screen, video)
-
-
-def render_device_video_data_url(screen: Dict[str, Any], video_bytes: bytes, mime: str = "video/mp4") -> None:
-    """Локально загруженное видео — через data URL внутри device frame."""
-
-    import base64 as _b64
-    if not video_bytes:
-        return
-    b64 = _b64.b64encode(video_bytes).decode("ascii")
-    video = f"<video src='data:{mime};base64,{b64}' controls preload='metadata'></video>"
-    render_device_with_media(screen, video)
-
-
-def render_device_image(screen: Dict[str, Any], image_url: str) -> None:
-    """Thumbnail внутри device frame."""
-
-    img = f"<img src='{image_url}' alt='thumbnail'/>"
-    render_device_with_media(screen, img)
-
-
-def render_device_progress(screen: Dict[str, Any], stage: str, percent: int, eta_sec: int) -> None:
-    """Прогресс-бар ВНУТРИ device frame пока идёт генерация."""
-
-    mins = max(0, eta_sec // 60)
-    secs = max(0, eta_sec % 60)
-    eta_label = f"~{mins} мин {secs} сек" if mins else f"~{secs} сек"
-    media = (
-        f"<div class='progress-card'>"
-        f"<div class='stage'>Генерация на VPS</div>"
-        f"<div class='step'>{stage}</div>"
-        f"<div class='bar'><div style='width:{percent}%'></div></div>"
-        f"<div class='eta'>{percent}% · осталось {eta_label}</div>"
-        f"</div>"
-    )
-    render_device_with_media(screen, media)
 
 
 def render_arrow() -> None:
@@ -992,8 +972,7 @@ left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="to
 with left:
     st.markdown("<div class='card'><h2>📥 Исходное видео</h2>", unsafe_allow_html=True)
 
-    # Видео-плеер слева — НАПРЯМУЮ через st.video, без device-frame обёрток.
-    # Streamlit рисует плеер ВНУТРИ карточки автоматически.
+    # Видео ВНУТРИ device frame — единая функция render_video_device.
     try:
         from src.backend_client import absolute_url, is_configured  # type: ignore
     except Exception:
@@ -1002,24 +981,34 @@ with left:
 
     _yt_id = _youtube_id(st.session_state.video_url)
     if st.session_state.source_video_url and is_configured():
-        st.video(absolute_url(st.session_state.source_video_url))
-        st.caption(f"📥 Скачано на backend: {st.session_state.source_video_title}")
+        # Скачанный MP4 с backend — приоритет №1.
+        render_video_device(
+            mode="source_mp4", fmt=fmt, screen=screen,
+            video_url=absolute_url(st.session_state.source_video_url),
+        )
+        st.caption(
+            f"📥 Скачано на backend: {st.session_state.source_video_title} · "
+            f"{st.session_state.source_video_size_mb} МБ"
+        )
     elif st.session_state.video_bytes:
-        st.video(st.session_state.video_bytes)
-        st.caption(f"📥 Загружено локально: {st.session_state.video_name}")
+        # Локально загруженный файл (data URL).
+        import base64 as _b64
+        data_url = f"data:video/mp4;base64,{_b64.b64encode(st.session_state.video_bytes).decode('ascii')}"
+        render_video_device(
+            mode="source_mp4", fmt=fmt, screen=screen, video_url=data_url,
+        )
+        st.caption(f"📥 Загружено: {st.session_state.video_name}")
     elif _yt_id:
-        st.video(f"https://youtu.be/{_yt_id}")
-        st.caption("📥 YouTube preview — нажми «Загрузить видео по ссылке» чтобы скачать MP4 на backend")
-    elif st.session_state.video_url:
-        st.video(st.session_state.video_url)
+        # YouTube preview — только до «Загрузить видео по ссылке».
+        render_video_device(
+            mode="youtube_preview", fmt=fmt, screen=screen,
+            youtube_url=st.session_state.video_url,
+        )
+        st.caption("📥 YouTube preview · нажми «⬇️ Загрузить видео по ссылке» чтобы скачать MP4 на backend")
     else:
-        st.markdown(
-            "<div style='background:#0b1220;border:1px dashed rgba(124,58,237,.35);border-radius:14px;"
-            "padding:60px 20px;text-align:center;color:#94a3b8;font-size:13px;margin-bottom:14px'>"
-            "📥 Здесь появится исходное видео<br>"
-            "<span style='font-size:11px;color:#64748b'>Вставь ссылку YouTube/Shorts или загрузи файл ниже</span>"
-            "</div>",
-            unsafe_allow_html=True,
+        render_video_device(
+            mode="empty", fmt=fmt, screen=screen,
+            placeholder_text="Вставьте ссылку или загрузите файл",
         )
 
     # Поле ссылки.
@@ -1083,7 +1072,7 @@ with left:
             unsafe_allow_html=True,
         )
 
-    # Метаданные скачанного на backend.
+    # Метаданные скачанного на backend + кнопка скачивания исходника на компьютер.
     if st.session_state.source_video_url:
         st.markdown(
             f"<span class='pill ok'>✅ Скачано на backend</span>"
@@ -1091,6 +1080,9 @@ with left:
             f"<span class='pill'>{st.session_state.source_video_size_mb} МБ</span>"
             f"<span class='pill'>{st.session_state.source_video_duration} сек</span>",
             unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"[⬇ Скачать исходное видео на компьютер]({absolute_url(st.session_state.source_video_url)})"
         )
 
     # Загрузка файла с устройства.
@@ -1144,43 +1136,31 @@ with mid:
 with right:
     st.markdown("<div class='card'><h2>📤 Готовое видео</h2>", unsafe_allow_html=True)
 
-    # Видео-плеер справа — НАПРЯМУЮ через st.video.
+    # Видео ВНУТРИ device frame — единая функция render_video_device.
     try:
         from src.backend_client import absolute_url as _abs_url  # type: ignore
     except Exception:
         _abs_url = lambda x: x  # type: ignore  # noqa: E731
 
     if st.session_state.final_video_url:
-        st.video(_abs_url(st.session_state.final_video_url))
+        # Готовый туркменский MP4 — НИКАКОЙ YouTube embed как финальный результат.
+        render_video_device(
+            mode="final_mp4", fmt=fmt, screen=screen,
+            video_url=_abs_url(st.session_state.final_video_url),
+        )
         st.caption("📤 Готовое туркменское видео")
     elif st.session_state.get("job_status") and st.session_state["job_status"].get("stage") not in (None, "done", "failed"):
         s = st.session_state["job_status"]
-        progress = int(s.get("progress", 0))
-        step = s.get("current_step") or s.get("stage", "")
-        eta_sec = int(s.get("eta_sec", 0))
-        eta_label = f"~{eta_sec // 60} мин {eta_sec % 60} сек" if eta_sec >= 60 else f"~{eta_sec} сек"
-        st.markdown(
-            f"""
-            <div style='background:linear-gradient(180deg,#1e1b4b,#0b1220);border:2px solid #7c3aed;
-            border-radius:14px;padding:40px 24px;text-align:center;color:#fff;margin-bottom:14px'>
-              <div style='font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px'>Идёт генерация</div>
-              <div style='font-size:16px;font-weight:900;margin-bottom:14px'>{step}</div>
-              <div style='width:80%;height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin:0 auto'>
-                <div style='width:{progress}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>
-              </div>
-              <div style='font-size:13px;color:#cbd5e1;margin-top:10px'>{progress}% · осталось {eta_label}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_video_device(
+            mode="processing", fmt=fmt, screen=screen,
+            stage_label=s.get("current_step") or s.get("stage", ""),
+            progress=int(s.get("progress", 0)),
+            eta_sec=int(s.get("eta_sec", 0)),
         )
     else:
-        st.markdown(
-            "<div style='background:#0b1220;border:1px dashed rgba(124,58,237,.35);border-radius:14px;"
-            "padding:60px 20px;text-align:center;color:#94a3b8;font-size:13px;margin-bottom:14px'>"
-            "📤 Здесь появится готовое туркменское видео<br>"
-            "<span style='font-size:11px;color:#64748b'>Нажми «Создать готовое видео на туркменском»</span>"
-            "</div>",
-            unsafe_allow_html=True,
+        render_video_device(
+            mode="empty", fmt=fmt, screen=screen,
+            placeholder_text="Готовое видео появится здесь",
         )
 
     # Главная кнопка — автоматический pipeline (download + process одним кликом).
@@ -1251,31 +1231,60 @@ with right:
             st.info("🎬 Запущена симуляция этапов (BACKEND_URL не настроен — реальный MP4 рендерится только на VPS).")
         st.rerun()
 
-    # Реальные download-кнопки. Используют backend file URL если есть.
+    # 8 кнопок скачивания готового результата.
+    st.markdown("**📥 Скачать готовый результат на компьютер:**")
     d1, d2 = st.columns(2)
+
+    # Row 1: MP4 + MP4 with SRT
     if st.session_state.final_video_url:
-        d1.markdown(f"[⬇ Скачать MP4]({_abs_url(st.session_state.final_video_url)})")
+        d1.markdown(f"[⬇ MP4]({_abs_url(st.session_state.final_video_url)})")
     else:
-        d1.button("Скачать MP4", disabled=True, use_container_width=True, key="dl_mp4_disabled")
-    if st.session_state.final_srt_url:
-        d2.markdown(f"[⬇ Скачать SRT]({_abs_url(st.session_state.final_srt_url)})")
+        d1.button("MP4", disabled=True, use_container_width=True, key="dl_mp4_off")
+    if st.session_state.get("final_video_srt_url") or st.session_state.final_video_url:
+        url_srt = st.session_state.get("final_video_srt_url") or st.session_state.final_video_url
+        d2.markdown(f"[⬇ MP4 + SRT]({_abs_url(url_srt)})")
     else:
-        d2.download_button(
-            "Скачать SRT",
-            data=srt(st.session_state.result_text).encode(),
-            file_name="subtitles.srt",
-            use_container_width=True,
-            key="dl_srt_local",
-        )
+        d2.button("MP4 + SRT", disabled=True, use_container_width=True, key="dl_mp4srt_off")
+
+    # Row 2: WAV + MP3
     if st.session_state.final_audio_url:
-        d1.markdown(f"[⬇ Скачать WAV]({_abs_url(st.session_state.final_audio_url)})")
+        d1.markdown(f"[⬇ WAV]({_abs_url(st.session_state.final_audio_url)})")
     else:
-        d1.button("Скачать WAV", disabled=True, use_container_width=True, key="dl_wav_disabled")
-    if st.session_state.final_zip_url:
-        d2.markdown(f"[⬇ Скачать ZIP проекта]({_abs_url(st.session_state.final_zip_url)})")
+        d1.button("WAV", disabled=True, use_container_width=True, key="dl_wav_off")
+    if st.session_state.get("final_mp3_url"):
+        d2.markdown(f"[⬇ MP3]({_abs_url(st.session_state['final_mp3_url'])})")
+    else:
+        d2.button("MP3", disabled=True, use_container_width=True, key="dl_mp3_off")
+
+    # Row 3: SRT + VTT
+    if st.session_state.final_srt_url:
+        d1.markdown(f"[⬇ SRT]({_abs_url(st.session_state.final_srt_url)})")
+    else:
+        d1.download_button(
+            "SRT", data=srt(st.session_state.result_text).encode(),
+            file_name="subtitles.srt", use_container_width=True, key="dl_srt_local",
+        )
+    if st.session_state.get("final_vtt_url"):
+        d2.markdown(f"[⬇ VTT]({_abs_url(st.session_state['final_vtt_url'])})")
     else:
         d2.download_button(
-            "ZIP / JSON проекта",
+            "VTT", data=vtt(st.session_state.result_text).encode(),
+            file_name="subtitles.vtt", use_container_width=True, key="dl_vtt_local",
+        )
+
+    # Row 4: TXT + ZIP project
+    if st.session_state.final_txt_url:
+        d1.markdown(f"[⬇ TXT]({_abs_url(st.session_state.final_txt_url)})")
+    else:
+        d1.download_button(
+            "TXT", data=(st.session_state.result_text or "").encode(),
+            file_name="translation.txt", use_container_width=True, key="dl_txt_local",
+        )
+    if st.session_state.final_zip_url:
+        d2.markdown(f"[⬇ ZIP проекта]({_abs_url(st.session_state.final_zip_url)})")
+    else:
+        d2.download_button(
+            "ZIP / JSON",
             data=project_json(),
             file_name="murat-ai-package.json",
             use_container_width=True,

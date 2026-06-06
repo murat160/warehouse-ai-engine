@@ -4,8 +4,8 @@
 # проходил за 30 секунд. Все heavy ML deps (torch, transformers, scipy,
 # whisper, sentencepiece) → requirements-full.txt (для VPS/GPU).
 #
-# rebuild-marker: 2026-06-07-v3 (DIRECT-PLAYER-NO-FRAME)
-# Force Streamlit Cloud container rebuild — old st.video() must be evicted.
+# rebuild-marker: 2026-06-07-v4 (render-video-device / all-in-one-iframe)
+# Force Streamlit Cloud container rebuild.
 
 streamlit==1.45.1
 python-dotenv>=1.0,<2.0
