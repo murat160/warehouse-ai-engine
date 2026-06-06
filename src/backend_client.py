@@ -142,3 +142,51 @@ def translate_turkmen(text: str, source_lang: str = "ru", style: str = "cultural
         "/api/translate/turkmen",
         json={"text": text, "source_lang": source_lang, "style": style, "emotion": emotion},
     )
+
+
+# ---------------------------------------------------------------------------
+# Новые endpoints для скачивания видео + обработки.
+# ---------------------------------------------------------------------------
+def inspect_url(url: str) -> Dict[str, Any]:
+    return _post("/api/video/inspect-url", json={"url": url}, timeout=60)
+
+
+def download_url(url: str, quality: str = "1080p", format: str = "mp4") -> Dict[str, Any]:
+    return _post(
+        "/api/video/download-url",
+        json={"url": url, "quality": quality, "format": format},
+        timeout=600,  # скачивание долгое
+    )
+
+
+def process_turkmen(
+    job_id: str,
+    target_language: str = "tk",
+    voice_mode: str = "auto_original",
+    emotion_mode: str = "auto_original",
+    output_quality: str = "1080p",
+    video_format: str = "16:9",
+    style: str = "cultural",
+) -> Dict[str, Any]:
+    return _post(
+        f"/api/jobs/{job_id}/process-turkmen",
+        json={
+            "target_language": target_language,
+            "voice_mode": voice_mode,
+            "emotion_mode": emotion_mode,
+            "output_quality": output_quality,
+            "video_format": video_format,
+            "style": style,
+        },
+        timeout=30,
+    )
+
+
+def absolute_url(relative_path: str) -> str:
+    """Превращает '/api/jobs/<id>/files/<name>' в полный URL для st.video / download_button."""
+
+    if not relative_path:
+        return ""
+    if relative_path.startswith("http"):
+        return relative_path
+    return backend_url() + relative_path

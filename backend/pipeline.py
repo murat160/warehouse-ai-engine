@@ -5,26 +5,40 @@
 в "failed" и сохранит error.
 
 Шаги:
-    download → extract_audio → transcribe → detect_speakers →
-    analyze_emotions → translate → quality_check (repair) →
-    tts → sync → render → done
+    extract_audio → transcribe → detect_speakers → analyze_emotions →
+    translate → quality_check → tts → sync → render → done
+
+(Скачивание происходит ДО pipeline через POST /api/video/download-url.)
+
+Все промежуточные файлы пишутся в storage/jobs/<job_id>/work/.
+Финальные — в storage/jobs/<job_id>/output/.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+import shutil
 import threading
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List
 
 from .jobs import STORE, Job
+from .storage import (
+    FINAL_SRT,
+    FINAL_TXT,
+    FINAL_VIDEO,
+    FINAL_VOICEOVER,
+    FINAL_VTT,
+    FINAL_ZIP,
+    SOURCE_AUDIO,
+    SOURCE_VIDEO,
+    job_output_dir,
+    job_source_dir,
+    job_work_dir,
+)
 
 logger = logging.getLogger(__name__)
-
-OUT_ROOT = Path(os.environ.get("MURAT_AI_OUT", "out"))
-OUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def _set(job_id: str, stage: str, progress: int, message: str = "") -> None:
@@ -39,7 +53,8 @@ def run_pipeline(job_id: str) -> None:
         logger.error("Job %s not found", job_id)
         return
     try:
-        _stage_download(job)
+        if not _ensure_source(job):
+            _stage_download(job)
         _stage_extract_audio(job)
         _stage_transcribe(job)
         _stage_detect_speakers(job)
@@ -49,6 +64,7 @@ def run_pipeline(job_id: str) -> None:
         _stage_tts(job)
         _stage_sync(job)
         _stage_render(job)
+        _stage_finalize(job)
         _set(job.id, "done", 100, "Готово.")
     except Exception as exc:  # noqa: BLE001
         tb = traceback.format_exc()
@@ -64,17 +80,33 @@ def run_pipeline_async(job_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Stages.
 # ---------------------------------------------------------------------------
+def _ensure_source(job: Job) -> bool:
+    src = job_source_dir(job.id) / SOURCE_VIDEO
+    if src.exists():
+        STORE.update(job.id, result={**job.result, "source_path": str(src)})
+        return True
+    if job.upload_path and Path(job.upload_path).exists():
+        if Path(job.upload_path) != src:
+            shutil.copy(job.upload_path, src)
+        STORE.update(job.id, result={**job.result, "source_path": str(src)})
+        return True
+    return False
+
+
 def _stage_download(job: Job) -> None:
     _set(job.id, "downloading", 5, "Скачиваю видео…")
-    if job.upload_path:
-        STORE.update(job.id, result={**job.result, "source_path": job.upload_path})
-        return
+    if not job.url:
+        raise RuntimeError("Нет ни ссылки, ни загруженного файла.")
     from src.cloud.video_downloader import download_video_from_url
 
-    res = download_video_from_url(job.url, output_dir=str(OUT_ROOT / job.id))
+    res = download_video_from_url(job.url, output_dir=str(job_source_dir(job.id)))
     if not res.get("ok"):
         raise RuntimeError(res.get("message", "Скачивание не удалось"))
-    STORE.update(job.id, result={**job.result, "source_path": res["path"]})
+    dl = Path(res["path"])
+    target = job_source_dir(job.id) / SOURCE_VIDEO
+    if dl != target:
+        shutil.move(str(dl), str(target))
+    STORE.update(job.id, result={**job.result, "source_path": str(target)})
 
 
 def _stage_extract_audio(job: Job) -> None:
@@ -82,8 +114,11 @@ def _stage_extract_audio(job: Job) -> None:
     from src.cloud.asr import extract_audio_from_video
 
     src = STORE.get(job.id).result.get("source_path", "")
-    wav = extract_audio_from_video(src)
-    STORE.update(job.id, result={**STORE.get(job.id).result, "audio_path": wav})
+    wav_tmp = extract_audio_from_video(src)
+    audio_path = job_work_dir(job.id) / SOURCE_AUDIO
+    if wav_tmp and Path(wav_tmp).exists():
+        shutil.move(wav_tmp, str(audio_path))
+    STORE.update(job.id, result={**STORE.get(job.id).result, "audio_path": str(audio_path)})
 
 
 def _stage_transcribe(job: Job) -> None:
@@ -106,7 +141,7 @@ def _stage_detect_speakers(job: Job) -> None:
 
 def _stage_analyze_emotions(job: Job) -> None:
     _set(job.id, "analyzing_emotions", 45, "Анализирую эмоции…")
-    from src.cloud.emotion_transfer import analyze_emotion_from_text, create_emotion_profile
+    from src.cloud.emotion_transfer import create_emotion_profile
 
     segments = STORE.get(job.id).result.get("segments", [])
     text = " ".join(seg.get("text", "") for seg in segments)
@@ -158,7 +193,6 @@ def _stage_quality_check(job: Job) -> None:
 def _stage_tts(job: Job) -> None:
     _set(job.id, "tts", 80, "Синтезирую туркменскую озвучку (MMS-TTS)…")
     from src.cloud.tts_turkmen import (
-        TurkmenEmotionProfile,
         TurkmenVoiceProfile,
         get_emotion_preset,
         synthesize_turkmen_tts,
@@ -166,17 +200,13 @@ def _stage_tts(job: Job) -> None:
 
     translated = STORE.get(job.id).result.get("translated", [])
     emotion_dict = STORE.get(job.id).result.get("emotion_profile", {})
-    emotion_label = emotion_dict.get("emotion", "neutral")
-    preset = get_emotion_preset(emotion_label)
+    preset = get_emotion_preset(emotion_dict.get("emotion", "neutral"))
     voice = TurkmenVoiceProfile(id=job.voice_mode, name=job.voice_mode)
-    tracks: List[str] = []
-    for seg in translated:
-        text = seg.get("translation", "")
-        if not text:
-            continue
-        path = synthesize_turkmen_tts(text, emotion_profile=preset, voice_profile=voice)
-        tracks.append(path)
-    STORE.update(job.id, result={**STORE.get(job.id).result, "tts_tracks": tracks})
+    voiceover_path = job_output_dir(job.id) / FINAL_VOICEOVER
+    full_text = " ".join((seg.get("translation") or "") for seg in translated)
+    if full_text.strip():
+        synthesize_turkmen_tts(full_text, emotion_profile=preset, voice_profile=voice, output_path=str(voiceover_path))
+    STORE.update(job.id, result={**STORE.get(job.id).result, "voiceover_path": str(voiceover_path)})
 
 
 def _stage_sync(job: Job) -> None:
@@ -185,28 +215,43 @@ def _stage_sync(job: Job) -> None:
 
     translated = STORE.get(job.id).result.get("translated", [])
     fitted = fit_translation_to_timeline(translated, translated)
-    sync_report = validate_sync(
-        video_duration=max((float(s.get("end", 0)) for s in translated), default=0.0),
-        audio_duration=max((float(s.get("end", 0)) for s in translated), default=0.0),
-        segment_timings=fitted,
-    )
-    STORE.update(job.id, result={**STORE.get(job.id).result, "fitted": fitted, "sync_report": sync_report})
+    duration = max((float(s.get("end", 0)) for s in translated), default=0.0)
+    sync = validate_sync(video_duration=duration, audio_duration=duration, segment_timings=fitted)
+    STORE.update(job.id, result={**STORE.get(job.id).result, "fitted": fitted, "sync_report": sync})
 
 
 def _stage_render(job: Job) -> None:
     _set(job.id, "rendering", 95, "Собираю готовый MP4…")
     from src.cloud.video_renderer import render_final_video
 
+    out = job_output_dir(job.id) / FINAL_VIDEO
     res_data = STORE.get(job.id).result
-    out = OUT_ROOT / job.id / f"final_{job.quality}.mp4"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    render = render_final_video(
+    res = render_final_video(
         source_video_path=res_data.get("source_path"),
-        dubbed_audio_path=(res_data.get("tts_tracks") or [None])[0],
+        dubbed_audio_path=res_data.get("voiceover_path"),
         subtitles_path=None,
         output_format="mp4",
         quality=job.quality,
         aspect_ratio=job.aspect,
         output_path=str(out),
     )
-    STORE.update(job.id, result={**res_data, "final_video": render, "final_path": str(out)})
+    STORE.update(job.id, result={**res_data, "final_video": res, "final_path": str(out)})
+
+
+def _stage_finalize(job: Job) -> None:
+    """Сохраняет subtitles.srt / .vtt / translation.txt / project.zip."""
+
+    from src.cloud.video_renderer import export_project_zip, export_srt, export_txt, export_vtt
+
+    out_dir = job_output_dir(job.id)
+    translated = STORE.get(job.id).result.get("translated", [])
+    full_text = "\n".join((seg.get("translation") or "") for seg in translated)
+    (out_dir / FINAL_SRT).write_bytes(export_srt(full_text))
+    (out_dir / FINAL_VTT).write_bytes(export_vtt(full_text))
+    (out_dir / FINAL_TXT).write_bytes(export_txt(full_text))
+    payload = {
+        "job_id": job.id,
+        "result_text": full_text,
+        "result": STORE.get(job.id).result,
+    }
+    (out_dir / FINAL_ZIP).write_bytes(export_project_zip(payload))

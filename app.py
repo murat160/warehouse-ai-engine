@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "studio-backend-pipeline / 2026-05-25-01:00 / one-button"
+BUILD = "real-video-pipeline / 2026-05-25-01:30 / inspect-download-process"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -171,6 +171,16 @@ def init_state() -> None:
         "job_id": "",
         "job_status": None,
         "url_preview": None,
+        "source_video_url": "",           # реальный URL backend на скачанный source MP4
+        "source_video_title": "",
+        "source_video_duration": 0,
+        "source_video_size_mb": 0,
+        "source_video_thumbnail": "",
+        "final_video_url": "",            # реальный URL backend на готовый MP4
+        "final_audio_url": "",
+        "final_srt_url": "",
+        "final_txt_url": "",
+        "final_zip_url": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -701,18 +711,19 @@ screen_name = s1[1].selectbox(
     help="Рамка устройства, внутри которой смотрим preview.",
 )
 
-s2 = st.columns(5)
-quality   = s2[0].selectbox("Качество готового видео", QUALITIES, index=4, key="ui_quality", help="Auto = выбрать максимально доступное. Если источник ниже выбранного — будет апскейл (не настоящее 4K/8K).")
-src_lang  = s2[1].selectbox("С языка", list(LANGS.keys()), format_func=lambda c: LANGS[c], key="ui_src")
-dst_lang  = s2[2].selectbox("На язык", list(LANGS.keys()), index=1, format_func=lambda c: LANGS[c], key="ui_dst")
-voice_sel = s2[3].selectbox(
+s2 = st.columns(6)
+source_quality = s2[0].selectbox("Качество исходника", QUALITIES, index=4, key="ui_source_quality", help="Какое качество скачать с YouTube/Shorts. Auto = лучшее доступное.")
+quality   = s2[1].selectbox("Качество готового видео", QUALITIES, index=4, key="ui_quality", help="Если источник ниже выбранного — будет апскейл (не настоящее 4K/8K).")
+src_lang  = s2[2].selectbox("С языка", list(LANGS.keys()), format_func=lambda c: LANGS[c], key="ui_src")
+dst_lang  = s2[3].selectbox("На язык", list(LANGS.keys()), index=1, format_func=lambda c: LANGS[c], key="ui_dst")
+voice_sel = s2[4].selectbox(
     "Голос",
     VOICE_NAMES,
     index=VOICE_NAMES.index(st.session_state.selected_voice) if st.session_state.selected_voice in VOICE_NAMES else 0,
     key="ui_voice",
 )
 st.session_state.selected_voice = voice_sel
-emotion_mode = s2[4].selectbox("Эмоция", EMOTIONS, key="ui_emotion")
+emotion_mode = s2[5].selectbox("Эмоция", EMOTIONS, key="ui_emotion")
 
 s3 = st.columns(6)
 speed  = s3[0].slider("Темп",      0.6, 1.6, 1.0, 0.05, key="ui_speed")
@@ -748,17 +759,30 @@ left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="to
 with left:
     st.markdown("<div class='card'><h2>📥 Исходное видео</h2>", unsafe_allow_html=True)
 
-    if st.session_state.video_bytes:
+    # Видео-рамка: ПОКАЗЫВАЕМ ИМЕННО СКАЧАННЫЙ MP4 С BACKEND, не YouTube iframe.
+    try:
+        from src.backend_client import absolute_url, is_configured  # type: ignore
+    except Exception:
+        absolute_url = lambda x: x  # type: ignore  # noqa: E731
+        is_configured = lambda: False  # type: ignore  # noqa: E731
+
+    if st.session_state.source_video_url and is_configured():
+        render_device_video_open(screen)
+        st.video(absolute_url(st.session_state.source_video_url))
+        render_device_video_close()
+    elif st.session_state.video_bytes:
         render_device_video_open(screen)
         st.video(st.session_state.video_bytes)
         render_device_video_close()
-    elif st.session_state.video_url:
+    elif st.session_state.get("url_preview", {}).get("thumbnail"):
+        # Показываем thumbnail из inspect-url до скачивания.
         render_device_video_open(screen)
-        st.video(st.session_state.video_url)
+        st.image(st.session_state["url_preview"]["thumbnail"], use_container_width=True)
         render_device_video_close()
     else:
-        render_device_placeholder("Здесь появится исходное видео", fmt, screen)
+        render_device_placeholder("Сначала вставьте ссылку или загрузите файл", fmt, screen)
 
+    # Поле ссылки.
     new_url = st.text_input(
         "Вставить ссылку на видео",
         value=st.session_state.video_url,
@@ -768,39 +792,69 @@ with left:
     if new_url != st.session_state.video_url:
         st.session_state.video_url = new_url
 
+    # Кнопка «Проверить ссылку» — inspect-url.
     c1, c2 = st.columns(2)
-    if c1.button("Показать по ссылке", type="primary", use_container_width=True, key="btn_show_url"):
-        st.session_state.video_bytes = None
-        st.session_state.video_name = ""
-        st.session_state.result_ready = False
+    if c1.button("🔍 Проверить ссылку", use_container_width=True, key="btn_inspect_url"):
         try:
-            from src.backend_client import is_configured, preview_url  # type: ignore
+            from src.backend_client import inspect_url, is_configured  # type: ignore
             if is_configured() and st.session_state.video_url:
-                st.session_state.url_preview = preview_url(st.session_state.video_url)
-        except Exception:
-            pass
-        st.rerun()
-    if st.session_state.get("url_preview"):
-        meta = (st.session_state.url_preview or {}).get("metadata") or {}
-        if meta:
-            st.caption(f"📺 {meta.get('title','')} · {meta.get('duration','')} сек · {meta.get('uploader','')}")
-    if c2.button("Скачать видео по ссылке", use_container_width=True, key="btn_download_url"):
-        try:
-            from src.backend_client import create_job, is_configured, start_job  # type: ignore
-            if is_configured() and st.session_state.video_url:
-                created = create_job(url=st.session_state.video_url, quality=quality, aspect=fmt["label"])
-                if created.get("id"):
-                    st.session_state.job_id = created["id"]
-                    start_job(created["id"])
-                    st.success(f"Скачивание запущено на VPS. Job: {created['id']}")
-                else:
-                    st.warning(created.get("message", "Не получилось создать job."))
+                with st.spinner("Запрашиваю метаданные…"):
+                    meta = inspect_url(st.session_state.video_url)
+                st.session_state.url_preview = meta
+                if not meta.get("ok"):
+                    st.warning(meta.get("message", "Не удалось получить metadata."))
             else:
-                st.info("Подключи BACKEND_URL чтобы скачать ссылку через VPS (yt-dlp).")
+                st.info("Подключи BACKEND_URL для проверки ссылки через VPS.")
         except Exception as exc:
-            st.warning(f"Не получилось вызвать backend: {exc}")
+            st.warning(f"Backend недоступен: {exc}")
 
-    st.caption("Загрузить файл с устройства — MP4 / MOV / WEBM / MKV / M4V")
+    # Кнопка «Загрузить видео по ссылке» — реальное скачивание yt-dlp.
+    if c2.button("⬇️ Загрузить видео по ссылке", type="primary", use_container_width=True, key="btn_download_url"):
+        try:
+            from src.backend_client import download_url, is_configured  # type: ignore
+            if is_configured() and st.session_state.video_url:
+                with st.spinner(f"Скачиваю видео на backend через yt-dlp ({source_quality})…"):
+                    res = download_url(st.session_state.video_url, quality=source_quality)
+                if res.get("ok"):
+                    st.session_state.job_id = res["job_id"]
+                    st.session_state.source_video_url = res["source_video_url"]
+                    st.session_state.source_video_title = res.get("title", "")
+                    st.session_state.source_video_duration = res.get("duration", 0)
+                    st.session_state.source_video_size_mb = res.get("file_size_mb", 0)
+                    st.session_state.source_video_thumbnail = res.get("thumbnail_url", "")
+                    st.session_state.video_bytes = None
+                    st.session_state.video_name = ""
+                    st.success(res.get("message", "Видео скачано на backend."))
+                    st.rerun()
+                else:
+                    st.warning(res.get("message", "Скачивание не удалось."))
+            else:
+                st.info("Подключи BACKEND_URL для скачивания YouTube через VPS (yt-dlp).")
+        except Exception as exc:
+            st.warning(f"Backend недоступен: {exc}")
+
+    # Metadata из inspect.
+    meta = st.session_state.get("url_preview") or {}
+    if meta.get("title"):
+        st.markdown(
+            f"<span class='pill ok'>📺 {meta.get('title','')}</span>"
+            f"<span class='pill'>⏱ {meta.get('duration', 0)} сек</span>"
+            f"<span class='pill'>{meta.get('uploader','')}</span>",
+            unsafe_allow_html=True,
+        )
+
+    # Метаданные скачанного на backend.
+    if st.session_state.source_video_url:
+        st.markdown(
+            f"<span class='pill ok'>✅ Скачано на backend</span>"
+            f"<span class='pill'>{st.session_state.source_video_title}</span>"
+            f"<span class='pill'>{st.session_state.source_video_size_mb} МБ</span>"
+            f"<span class='pill'>{st.session_state.source_video_duration} сек</span>",
+            unsafe_allow_html=True,
+        )
+
+    # Загрузка файла с устройства.
+    st.caption("Или загрузи файл с устройства — MP4 / MOV / WEBM / MKV / M4V")
     up = st.file_uploader(
         "Загрузить видео",
         type=["mp4", "mov", "webm", "mkv", "m4v"],
@@ -811,10 +865,32 @@ with left:
         st.session_state.video_bytes = up.read()
         st.session_state.video_name = up.name
         st.session_state.video_url = ""
+        st.session_state.source_video_url = ""  # сбрасываем — будет новый upload-job
         st.session_state.result_ready = False
+        # Если backend подключён — сразу создаём upload job (видео уйдёт на VPS).
+        try:
+            from src.backend_client import is_configured, upload_and_create_job  # type: ignore
+            if is_configured():
+                with st.spinner("Отправляю файл на backend…"):
+                    res = upload_and_create_job(
+                        st.session_state.video_bytes,
+                        st.session_state.video_name,
+                        quality=quality,
+                        aspect=fmt["label"],
+                    )
+                if res.get("ok") or res.get("job_id"):
+                    st.session_state.job_id = res.get("job_id", "")
+                    st.session_state.source_video_url = res.get("source_video_url", "")
+                    st.session_state.source_video_title = res.get("title", "")
+                    st.session_state.source_video_size_mb = res.get("file_size_mb", 0)
+        except Exception:
+            pass
         st.rerun()
     if st.session_state.video_name:
         st.caption(f"📎 Загружен: {st.session_state.video_name}")
+
+    if st.session_state.job_id:
+        st.caption(f"🆔 Job: `{st.session_state.job_id}`")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -828,94 +904,84 @@ with mid:
 with right:
     st.markdown("<div class='card'><h2>📤 Готовое видео</h2>", unsafe_allow_html=True)
 
-    if st.session_state.result_ready and st.session_state.video_bytes:
+    # Видео-рамка: показываем именно ГОТОВЫЙ MP4 с backend.
+    try:
+        from src.backend_client import absolute_url as _abs_url  # type: ignore
+    except Exception:
+        _abs_url = lambda x: x  # type: ignore  # noqa: E731
+
+    if st.session_state.final_video_url:
         render_device_video_open(screen)
-        st.video(st.session_state.video_bytes)
-        render_device_video_close()
-    elif st.session_state.result_ready and st.session_state.video_url:
-        render_device_video_open(screen)
-        st.video(st.session_state.video_url)
+        st.video(_abs_url(st.session_state.final_video_url))
         render_device_video_close()
     else:
-        render_device_placeholder("Здесь появится готовое видео", fmt, screen)
+        render_device_placeholder("Готовое видео появится здесь", fmt, screen)
 
+    # Главная кнопка — запускает process-turkmen на скачанном job.
     if st.button("✨ Создать готовое видео на туркменском", type="primary", use_container_width=True, key="btn_make_video"):
         st.session_state.analysis = asdict(analyze_emotion(st.session_state.source_text))
         st.session_state.result_text = translate_text(st.session_state.source_text, src_lang, dst_lang)
         st.session_state.result_ready = True
-
-        # Если backend подключён — запускаем настоящий pipeline.
         try:
-            from src.backend_client import (  # type: ignore
-                create_job,
-                is_configured,
-                start_job,
-                upload_and_create_job,
-            )
+            from src.backend_client import is_configured, process_turkmen  # type: ignore
         except Exception:
             is_configured = lambda: False  # type: ignore  # noqa: E731
+            process_turkmen = None  # type: ignore
 
-        if is_configured():
-            payload = {
-                "target_lang": "tk",
-                "quality": quality,
-                "aspect": fmt["label"],
-                "voice_mode": "auto",
-                "emotion_mode": "auto" if emotion_mode == "Автоматически по оригиналу" else f"manual:{emotion_mode}",
-                "style": "cultural",
-            }
-            if st.session_state.video_bytes:
-                created = upload_and_create_job(
-                    st.session_state.video_bytes,
-                    st.session_state.video_name or "video.mp4",
-                    **payload,
-                )
+        if is_configured() and st.session_state.job_id and process_turkmen:
+            emotion_mode_api = (
+                "auto_original" if emotion_mode == "Автоматически по оригиналу"
+                else f"manual:{emotion_mode}"
+            )
+            res = process_turkmen(
+                st.session_state.job_id,
+                target_language="tk",
+                voice_mode="auto_original",
+                emotion_mode=emotion_mode_api,
+                output_quality=quality,
+                video_format=fmt["label"],
+                style="cultural",
+            )
+            if res.get("ok"):
+                st.success(f"Pipeline запущен. Job: {st.session_state.job_id}. Следи за прогрессом ниже.")
             else:
-                created = create_job(url=st.session_state.video_url, **payload)
-            if created.get("id"):
-                st.session_state.job_id = created["id"]
-                start_job(created["id"])
-                st.session_state.job_status = {"stage": "queued", "progress": 0}
-                st.success(f"Job создан: {created['id']}. Pipeline запущен на VPS.")
-            else:
-                st.warning(created.get("message") or "Backend не создал job.")
+                st.warning(res.get("message", "Backend не запустил pipeline."))
+        elif not st.session_state.job_id:
+            st.warning("Сначала загрузи видео по ссылке или с устройства — backend должен скачать source перед обработкой.")
         else:
-            st.info("Preview: BACKEND_URL не настроен — запустился только UI-сценарий. Реальный MP4 рендерится на VPS.")
+            st.info("Preview: BACKEND_URL не настроен — реальный MP4 рендерится только на VPS.")
         st.rerun()
 
+    # Реальные download-кнопки. Используют backend file URL если есть.
     d1, d2 = st.columns(2)
-    d1.download_button(
-        "Скачать MP4",
-        data=b"MP4 preview placeholder",
-        file_name="murat-ai-final.mp4",
-        disabled=not st.session_state.result_ready,
-        use_container_width=True,
-        key="dl_mp4",
-    )
-    d2.download_button(
-        "MP4 + SRT",
-        data=srt(st.session_state.result_text).encode(),
-        file_name="murat-ai-final-with-srt.txt",
-        disabled=not st.session_state.result_ready,
-        use_container_width=True,
-        key="dl_mp4_srt",
-    )
-    d1.download_button(
-        "Скачать WAV",
-        data=b"WAV preview placeholder",
-        file_name="murat-ai-audio.wav",
-        disabled=not st.session_state.result_ready,
-        use_container_width=True,
-        key="dl_wav_top",
-    )
-    d2.download_button(
-        "ZIP / JSON проекта",
-        data=project_json(),
-        file_name="murat-ai-package.json",
-        disabled=not st.session_state.result_ready,
-        use_container_width=True,
-        key="dl_zip",
-    )
+    if st.session_state.final_video_url:
+        d1.markdown(f"[⬇ Скачать MP4]({_abs_url(st.session_state.final_video_url)})")
+    else:
+        d1.button("Скачать MP4", disabled=True, use_container_width=True, key="dl_mp4_disabled")
+    if st.session_state.final_srt_url:
+        d2.markdown(f"[⬇ Скачать SRT]({_abs_url(st.session_state.final_srt_url)})")
+    else:
+        d2.download_button(
+            "Скачать SRT",
+            data=srt(st.session_state.result_text).encode(),
+            file_name="subtitles.srt",
+            use_container_width=True,
+            key="dl_srt_local",
+        )
+    if st.session_state.final_audio_url:
+        d1.markdown(f"[⬇ Скачать WAV]({_abs_url(st.session_state.final_audio_url)})")
+    else:
+        d1.button("Скачать WAV", disabled=True, use_container_width=True, key="dl_wav_disabled")
+    if st.session_state.final_zip_url:
+        d2.markdown(f"[⬇ Скачать ZIP проекта]({_abs_url(st.session_state.final_zip_url)})")
+    else:
+        d2.download_button(
+            "ZIP / JSON проекта",
+            data=project_json(),
+            file_name="murat-ai-package.json",
+            use_container_width=True,
+            key="dl_zip_local",
+        )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1123,16 +1189,17 @@ st.markdown("</div>", unsafe_allow_html=True)
 if st.session_state.get("job_id"):
     st.markdown("<div class='card'><h2>⏳ Прогресс обработки на VPS</h2>", unsafe_allow_html=True)
     try:
-        from src.backend_client import file_url, is_configured, job_result, job_status  # type: ignore
+        from src.backend_client import is_configured, job_result, job_status  # type: ignore
         if is_configured():
             status = job_status(st.session_state.job_id)
             st.session_state.job_status = status
-            stage = status.get("stage", "queued")
+            stage = status.get("stage") or status.get("status") or "queued"
             progress = int(status.get("progress", 0))
+            current_step = status.get("current_step", stage)
             st.progress(min(100, max(0, progress)) / 100.0)
             st.markdown(
                 f"<span class='pill ok'>Job: {st.session_state.job_id}</span>"
-                f"<span class='pill'>Стадия: {stage}</span>"
+                f"<span class='pill'>Этап: {current_step}</span>"
                 f"<span class='pill'>{progress}%</span>",
                 unsafe_allow_html=True,
             )
@@ -1142,15 +1209,38 @@ if st.session_state.get("job_id"):
                 st.error(status["error"])
             if stage == "done":
                 res = job_result(st.session_state.job_id)
-                final_path = (res.get("result") or {}).get("final_path", "")
-                if final_path:
-                    name = final_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-                    st.success(f"Готово! Финальный файл: {name}")
-                    st.markdown(f"[⬇ Скачать MP4]({file_url(st.session_state.job_id, name)})")
-            if st.button("Обновить статус", key="btn_refresh_job"):
+                if res.get("ok"):
+                    # Сохраняем готовые URL'ы — правая карточка покажет видео + кнопки.
+                    st.session_state.final_video_url = res.get("final_video_url", "")
+                    st.session_state.final_audio_url = res.get("audio_url", "")
+                    st.session_state.final_srt_url = res.get("srt_url", "")
+                    st.session_state.final_txt_url = res.get("txt_url", "")
+                    st.session_state.final_zip_url = res.get("zip_url", "")
+                    st.success(
+                        f"✅ Готово! final_turkmen_video.mp4 сохранён в "
+                        f"storage/jobs/{st.session_state.job_id}/output/"
+                    )
+            colA, colB = st.columns([1, 1])
+            if colA.button("🔄 Обновить статус", key="btn_refresh_job", use_container_width=True):
+                st.rerun()
+            if colB.button("✖ Сбросить job", key="btn_reset_job", use_container_width=True):
+                for k in [
+                    "job_id", "job_status", "source_video_url", "source_video_title",
+                    "source_video_duration", "source_video_size_mb", "source_video_thumbnail",
+                    "final_video_url", "final_audio_url", "final_srt_url",
+                    "final_txt_url", "final_zip_url", "url_preview",
+                ]:
+                    st.session_state[k] = "" if isinstance(st.session_state.get(k), str) else None
                 st.rerun()
         else:
-            st.info("BACKEND_URL не настроен — статус job недоступен. Сбрось job_id или подключи backend.")
+            st.info(
+                "BACKEND_URL не настроен — статус job недоступен. "
+                "Добавь `BACKEND_URL=https://your-vps-domain.com` в Streamlit Secrets, "
+                "или сбрось job_id ниже."
+            )
+            if st.button("Сбросить job_id", key="btn_reset_job_offline"):
+                st.session_state.job_id = ""
+                st.rerun()
     except Exception as exc:
         st.warning(f"Не могу получить статус: {exc}")
     st.markdown("</div>", unsafe_allow_html=True)
