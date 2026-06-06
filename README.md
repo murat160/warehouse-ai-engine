@@ -25,7 +25,23 @@ VPS — деплой полностью domain-agnostic. Примеры:
 `warehouse-ecosystem` и не содержит кода клиентского, курьерского, продавца
 или админ-панели.
 
-## Два режима работы
+## Два режима работы — что где включается
+
+| Что | Streamlit Cloud preview | VPS / GPU full stack |
+|---|---|---|
+| requirements | `requirements.txt` (~50 МБ) | `requirements-full.txt` (~5 ГБ) |
+| UI | Murat AI Studio ✅ | Murat AI Studio ✅ |
+| Перевод ru/tk/tr/en | mock-стабы | MADLAD-400 / NLLB-200 |
+| Туркменский TTS | mock-сообщение | реальный `facebook/mms-tts-tuk-script_latin` |
+| Whisper ASR | — | ✅ |
+| Speaker diarization | — | ✅ |
+| Voice cloning | — | ✅ |
+| Скачивание видео | — | yt-dlp ✅ |
+| Финальный рендер MP4 | — | ffmpeg + GPU ✅ |
+
+Streamlit Cloud = только **UI preview** (легковесный pip install за 30 сек).
+Все heavy AI deps (torch, transformers, whisper, scipy, sentencepiece, ffmpeg)
+живут в `requirements-full.txt` и ставятся только на VPS.
 
 В репозитории сосуществуют две независимые реализации:
 

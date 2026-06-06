@@ -1,41 +1,11 @@
-# Streamlit Cloud preview requirements for Murat AI Studio.
-# Включаем настоящий MMS-TTS (туркменский) в preview — CPU-only torch.
-# Full AI/VPS stack — в requirements-full.txt.
-# rebuild-marker: 2026-05-24-23:30 (murat-ai-studio)
+# Murat AI Studio — Streamlit Cloud LIGHT preview.
+#
+# Сюда попадают ТОЛЬКО UI-зависимости, чтобы pip install в Streamlit Cloud
+# проходил за 30 секунд. Все heavy ML deps (torch, transformers, scipy,
+# whisper, sentencepiece) → requirements-full.txt (для VPS/GPU).
+#
+# rebuild-marker: 2026-05-25-00:00 (streamlit-light-preview)
 
-# --- Core ---
-pydantic>=2.6,<3.0
-pydantic-settings>=2.2,<3.0
-python-dotenv>=1.0,<2.0
-
-# --- API architecture ---
-fastapi>=0.110,<1.0
-uvicorn[standard]>=0.29,<1.0
-
-# --- HTTP / cloud providers ---
-httpx>=0.27,<1.0
-openai>=1.30,<2.0
-
-# --- Persistent storage ---
-SQLAlchemy>=2.0,<3.0
-
-# --- Streamlit preview UI ---
 streamlit==1.45.1
-
-# --- Lightweight helpers ---
-langdetect==1.0.9
-yt-dlp>=2025.1.1
-ffmpeg-python==0.2.0
-
-# --- Туркменская озвучка: настоящий MMS-TTS прямо в preview ---
-# CPU-only torch ставится через extra-index ниже (для Streamlit Cloud).
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.2
-transformers>=4.40,<5.0
-scipy>=1.10,<2.0
-numpy>=1.24,<2.0
-sentencepiece>=0.2.0,<1.0
-
-# --- Tests / dev ---
-pytest>=8.0,<9.0
-pytest-asyncio>=0.23,<1.0
+python-dotenv>=1.0,<2.0
+requests>=2.31,<3.0
