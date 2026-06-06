@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "iframe-isolation / 2026-06-07-v2 / one-block-render"
+BUILD = "DIRECT-PLAYER-NO-FRAME / 2026-06-07-v3 / stvideo-only"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -694,8 +694,8 @@ st.markdown(
     .block-container {{max-width:1520px;padding-top:1rem;padding-bottom:5rem}}
 
     .build {{
-        background:#052e2b;color:#99f6e4;border:1px solid #0f766e;
-        border-radius:14px;padding:10px 14px;font-weight:900;margin-bottom:12px;
+        background:#7c2d12;color:#fed7aa;border:2px solid #ea580c;
+        border-radius:14px;padding:14px 18px;font-weight:900;margin-bottom:12px;font-size:14px;
         font-family:ui-monospace,monospace;font-size:13px;letter-spacing:.4px
     }}
 
@@ -992,7 +992,8 @@ left, mid, right = st.columns([10, 1.4, 10], gap="small", vertical_alignment="to
 with left:
     st.markdown("<div class='card'><h2>📥 Исходное видео</h2>", unsafe_allow_html=True)
 
-    # Видео-рамка слева: МЕДИА ВНУТРИ device frame (один HTML-блок).
+    # Видео-плеер слева — НАПРЯМУЮ через st.video, без device-frame обёрток.
+    # Streamlit рисует плеер ВНУТРИ карточки автоматически.
     try:
         from src.backend_client import absolute_url, is_configured  # type: ignore
     except Exception:
@@ -1001,17 +1002,25 @@ with left:
 
     _yt_id = _youtube_id(st.session_state.video_url)
     if st.session_state.source_video_url and is_configured():
-        render_device_video_url(screen, absolute_url(st.session_state.source_video_url))
+        st.video(absolute_url(st.session_state.source_video_url))
+        st.caption(f"📥 Скачано на backend: {st.session_state.source_video_title}")
     elif st.session_state.video_bytes:
-        render_device_video_data_url(screen, st.session_state.video_bytes)
+        st.video(st.session_state.video_bytes)
+        st.caption(f"📥 Загружено локально: {st.session_state.video_name}")
     elif _yt_id:
-        # До скачивания показываем YouTube thumbnail ВНУТРИ device frame
-        # (iframe фильтруется bleach в st.markdown — используем thumbnail + link).
-        render_device_youtube(screen, _yt_id, st.session_state.video_url)
-    elif st.session_state.get("url_preview", {}).get("thumbnail"):
-        render_device_image(screen, st.session_state["url_preview"]["thumbnail"])
+        st.video(f"https://youtu.be/{_yt_id}")
+        st.caption("📥 YouTube preview — нажми «Загрузить видео по ссылке» чтобы скачать MP4 на backend")
+    elif st.session_state.video_url:
+        st.video(st.session_state.video_url)
     else:
-        render_device_placeholder("Сначала вставьте ссылку или загрузите файл", fmt, screen)
+        st.markdown(
+            "<div style='background:#0b1220;border:1px dashed rgba(124,58,237,.35);border-radius:14px;"
+            "padding:60px 20px;text-align:center;color:#94a3b8;font-size:13px;margin-bottom:14px'>"
+            "📥 Здесь появится исходное видео<br>"
+            "<span style='font-size:11px;color:#64748b'>Вставь ссылку YouTube/Shorts или загрузи файл ниже</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
     # Поле ссылки.
     new_url = st.text_input(
@@ -1135,24 +1144,44 @@ with mid:
 with right:
     st.markdown("<div class='card'><h2>📤 Готовое видео</h2>", unsafe_allow_html=True)
 
-    # Видео-рамка справа: готовый MP4 ВНУТРИ device frame.
+    # Видео-плеер справа — НАПРЯМУЮ через st.video.
     try:
         from src.backend_client import absolute_url as _abs_url  # type: ignore
     except Exception:
         _abs_url = lambda x: x  # type: ignore  # noqa: E731
 
     if st.session_state.final_video_url:
-        render_device_video_url(screen, _abs_url(st.session_state.final_video_url))
+        st.video(_abs_url(st.session_state.final_video_url))
+        st.caption("📤 Готовое туркменское видео")
     elif st.session_state.get("job_status") and st.session_state["job_status"].get("stage") not in (None, "done", "failed"):
         s = st.session_state["job_status"]
-        render_device_progress(
-            screen,
-            s.get("current_step") or s.get("stage", ""),
-            int(s.get("progress", 0)),
-            int(s.get("eta_sec", 0)),
+        progress = int(s.get("progress", 0))
+        step = s.get("current_step") or s.get("stage", "")
+        eta_sec = int(s.get("eta_sec", 0))
+        eta_label = f"~{eta_sec // 60} мин {eta_sec % 60} сек" if eta_sec >= 60 else f"~{eta_sec} сек"
+        st.markdown(
+            f"""
+            <div style='background:linear-gradient(180deg,#1e1b4b,#0b1220);border:2px solid #7c3aed;
+            border-radius:14px;padding:40px 24px;text-align:center;color:#fff;margin-bottom:14px'>
+              <div style='font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px'>Идёт генерация</div>
+              <div style='font-size:16px;font-weight:900;margin-bottom:14px'>{step}</div>
+              <div style='width:80%;height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin:0 auto'>
+                <div style='width:{progress}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>
+              </div>
+              <div style='font-size:13px;color:#cbd5e1;margin-top:10px'>{progress}% · осталось {eta_label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
     else:
-        render_device_placeholder("Готовое видео появится здесь", fmt, screen)
+        st.markdown(
+            "<div style='background:#0b1220;border:1px dashed rgba(124,58,237,.35);border-radius:14px;"
+            "padding:60px 20px;text-align:center;color:#94a3b8;font-size:13px;margin-bottom:14px'>"
+            "📤 Здесь появится готовое туркменское видео<br>"
+            "<span style='font-size:11px;color:#64748b'>Нажми «Создать готовое видео на туркменском»</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
     # Главная кнопка — автоматический pipeline (download + process одним кликом).
     if st.button("✨ Создать готовое видео на туркменском", type="primary", use_container_width=True, key="btn_make_video"):
