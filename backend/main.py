@@ -390,10 +390,15 @@ def jobs_status(job_id: str) -> Dict[str, Any]:
         "done":                "Готово",
         "failed":              "Ошибка",
     }
+    # Грубый ETA: типичная общая длительность pipeline ~3.5 мин на CPU.
+    total_pipeline_sec = 210
+    progress = max(0, min(100, int(job.progress)))
+    eta_sec = 0 if job.stage in ("done", "failed") else int(total_pipeline_sec * (100 - progress) / 100)
     return {
         **job.to_dict(),
         "current_step": stage_label_ru.get(job.stage, job.stage),
         "status": job.stage,
+        "eta_seconds": eta_sec,
     }
 
 

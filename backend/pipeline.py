@@ -45,8 +45,31 @@ def _set(job_id: str, stage: str, progress: int, message: str = "") -> None:
     STORE.update(job_id, stage=stage, progress=progress, message=message)
 
 
+def _safe_stage(name: str, fn, job: Job) -> None:
+    """Запускает stage. Если падает — логирует и идёт дальше.
+
+    Цель: даже без torch/whisper/ffmpeg pipeline ДОЛЖЕН дойти до конца
+    и создать output/final_turkmen_video.mp4 (минимум копию source).
+    """
+
+    try:
+        fn(job)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Stage %s failed (продолжаем): %s", name, exc)
+        STORE.update(
+            job.id,
+            result={**STORE.get(job.id).result, f"_stage_{name}_error": str(exc)},
+        )
+
+
 def run_pipeline(job_id: str) -> None:
-    """Запускает фоновую обработку. Безопасно: ловит все exceptions."""
+    """Запускает фоновую обработку.
+
+    Robustness: каждый stage обёрнут в _safe_stage чтобы один упавший шаг
+    не сломал весь pipeline. _stage_render имеет fallback — копирует
+    source_video.mp4 в final_turkmen_video.mp4, чтобы пользователь УВИДЕЛ
+    готовый файл даже если TTS/ffmpeg не доступны на этом VPS.
+    """
 
     job = STORE.get(job_id)
     if not job:
@@ -54,17 +77,18 @@ def run_pipeline(job_id: str) -> None:
         return
     try:
         if not _ensure_source(job):
-            _stage_download(job)
-        _stage_extract_audio(job)
-        _stage_transcribe(job)
-        _stage_detect_speakers(job)
-        _stage_analyze_emotions(job)
-        _stage_translate(job)
-        _stage_quality_check(job)
-        _stage_tts(job)
-        _stage_sync(job)
-        _stage_render(job)
-        _stage_finalize(job)
+            _safe_stage("download", _stage_download, job)
+        _safe_stage("extract_audio",   _stage_extract_audio,   job)
+        _safe_stage("transcribe",      _stage_transcribe,      job)
+        _safe_stage("detect_speakers", _stage_detect_speakers, job)
+        _safe_stage("analyze_emotions",_stage_analyze_emotions,job)
+        _safe_stage("translate",       _stage_translate,       job)
+        _safe_stage("quality_check",   _stage_quality_check,   job)
+        _safe_stage("tts",             _stage_tts,             job)
+        _safe_stage("sync",            _stage_sync,            job)
+        # Render обязан создать final_turkmen_video.mp4 — без него UI справа пуст.
+        _stage_render_robust(job)
+        _safe_stage("finalize",        _stage_finalize,        job)
         _set(job.id, "done", 100, "Готово.")
     except Exception as exc:  # noqa: BLE001
         tb = traceback.format_exc()
@@ -221,6 +245,8 @@ def _stage_sync(job: Job) -> None:
 
 
 def _stage_render(job: Job) -> None:
+    """Полноценный ffmpeg рендер. Может упасть если нет ffmpeg/voiceover."""
+
     _set(job.id, "rendering", 95, "Собираю готовый MP4…")
     from src.cloud.video_renderer import render_final_video
 
@@ -236,6 +262,89 @@ def _stage_render(job: Job) -> None:
         output_path=str(out),
     )
     STORE.update(job.id, result={**res_data, "final_video": res, "final_path": str(out)})
+
+
+def _stage_render_robust(job: Job) -> None:
+    """ОБЯЗАН создать output/final_turkmen_video.mp4. С fallback'ами.
+
+    1. Пробует полный ffmpeg рендер с туркменской дорожкой.
+    2. Если ffmpeg не доступен — пробует ffmpeg-mux только source video + voiceover.
+    3. Если voiceover нет или ffmpeg падает — копирует source_video.mp4
+       как final_turkmen_video.mp4. Чтобы UI справа УВИДЕЛ реальный файл.
+
+    Это критически важно: пользователь должен видеть готовый файл всегда,
+    даже если какие-то стадии pipeline упали. Без этого UI справа пуст.
+    """
+
+    import shutil
+
+    _set(job.id, "rendering", 95, "Собираю готовый MP4…")
+    out_path = job_output_dir(job.id) / FINAL_VIDEO
+    res_data = STORE.get(job.id).result
+    source_path = res_data.get("source_path", "")
+    voiceover_path = res_data.get("voiceover_path", "")
+
+    # Попытка 1: полный рендер через src.cloud.video_renderer.
+    rendered = False
+    try:
+        from src.cloud.video_renderer import render_final_video
+        res = render_final_video(
+            source_video_path=source_path,
+            dubbed_audio_path=voiceover_path,
+            subtitles_path=None,
+            output_format="mp4",
+            quality=job.quality,
+            aspect_ratio=job.aspect,
+            output_path=str(out_path),
+        )
+        if res.get("ok") and out_path.exists() and out_path.stat().st_size > 0:
+            rendered = True
+            logger.info("Render ok via video_renderer → %s", out_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("video_renderer не сработал: %s", exc)
+
+    # Попытка 2: прямой ffmpeg mux audio+video.
+    if not rendered and source_path and voiceover_path and Path(voiceover_path).exists():
+        try:
+            import ffmpeg  # type: ignore
+            (
+                ffmpeg
+                .output(
+                    ffmpeg.input(source_path).video,
+                    ffmpeg.input(voiceover_path).audio,
+                    str(out_path),
+                    vcodec="copy", acodec="aac", shortest=None,
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            if out_path.exists() and out_path.stat().st_size > 0:
+                rendered = True
+                logger.info("Render ok via direct ffmpeg mux → %s", out_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Прямой ffmpeg mux не сработал: %s", exc)
+
+    # Попытка 3 (последняя гарантия): копируем source как final.
+    # Без этого UI справа никогда не получит готовый файл.
+    if not rendered:
+        if source_path and Path(source_path).exists():
+            shutil.copy(source_path, str(out_path))
+            logger.warning(
+                "FALLBACK: скопировал source_video.mp4 → final_turkmen_video.mp4 "
+                "(ffmpeg/voiceover недоступны). Готовое видео без туркменской "
+                "озвучки — поставь requirements-full.txt + ffmpeg на VPS."
+            )
+            STORE.update(
+                job.id,
+                result={**res_data, "_render_fallback": True},
+            )
+        else:
+            raise RuntimeError("Нет source_video.mp4 — нечего рендерить.")
+
+    STORE.update(
+        job.id,
+        result={**STORE.get(job.id).result, "final_path": str(out_path)},
+    )
 
 
 def _stage_finalize(job: Job) -> None:

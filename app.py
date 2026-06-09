@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "render-video-device / 2026-06-07-v4 / all-in-one-iframe"
+BUILD = "backend-connected-video-flow / 2026-06-07-v5"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -181,7 +181,6 @@ def init_state() -> None:
         "final_srt_url": "",
         "final_txt_url": "",
         "final_zip_url": "",
-        "sim_started_at": None,   # для симуляции прогресса без backend
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -779,75 +778,35 @@ _PIPELINE_STAGES_RU = {
 }
 
 
-def _simulate_local_stage() -> Dict[str, Any]:
-    """Локальная симуляция прогресса когда BACKEND_URL не подключён.
-
-    Считает elapsed_sec от sim_started_at и определяет текущую стадию.
-    Это НЕ настоящая генерация — финальное видео НЕ появится, но пользователь
-    видит «сколько времени осталось» и список этапов.
-    """
-
-    import time as _time
-    started = st.session_state.get("sim_started_at")
-    if not started:
-        return {}
-    elapsed = _time.time() - started
-    cumulative = 0
-    total = sum(d for _, d in _PIPELINE_STAGES_RU.values() if d > 0)
-    for stage_id, (label, dur) in _PIPELINE_STAGES_RU.items():
-        if dur == 0:
-            continue
-        if elapsed < cumulative + dur:
-            stage_progress = (elapsed - cumulative) / dur
-            global_progress = int(((cumulative + stage_progress * dur) / total) * 100)
-            return {
-                "stage": stage_id,
-                "current_step": label,
-                "progress": global_progress,
-                "eta_sec": max(0, int(total - elapsed)),
-                "simulated": True,
-            }
-        cumulative += dur
-    return {"stage": "done", "current_step": "Готово", "progress": 100, "eta_sec": 0, "simulated": True}
-
-
 _active_job = bool(st.session_state.get("job_id"))
-_active_sim = bool(st.session_state.get("sim_started_at"))
 
-if _active_job or _active_sim:
-    # Получаем текущий статус: реальный с backend или симуляция.
+if _active_job and _bk_ok and _bk_health.get("ok"):
+    # Только РЕАЛЬНЫЙ backend status. Никакой симуляции.
     status = None
-    if _active_job and _bk_ok and _bk_health.get("ok"):
-        try:
-            from src.backend_client import job_status as _job_status, job_result as _job_result  # type: ignore
-            status = _job_status(st.session_state.job_id)
-        except Exception:
-            status = None
-    if status is None and _active_sim:
-        status = _simulate_local_stage()
+    try:
+        from src.backend_client import job_status as _job_status, job_result as _job_result  # type: ignore
+        status = _job_status(st.session_state.job_id)
+    except Exception as _exc:
+        st.error(f"Backend недоступен: {_exc}")
+        status = None
 
     if status:
         stage_id = status.get("stage") or status.get("status") or "queued"
         progress = int(status.get("progress", 0))
         current_step = status.get("current_step") or _PIPELINE_STAGES_RU.get(stage_id, (stage_id, 0))[0]
-        eta_sec = int(status.get("eta_sec", 0)) if "eta_sec" in status else 0
-        if not eta_sec and stage_id not in ("done", "failed"):
-            # Простая оценка ETA: оставшийся % * среднее на 1%.
-            total_dur = sum(d for _, d in _PIPELINE_STAGES_RU.values() if d > 0)
-            eta_sec = int((100 - progress) / 100 * total_dur)
+        eta_sec = int(status.get("eta_seconds", status.get("eta_sec", 0)))
         eta_label = (
             f"~{eta_sec // 60} мин {eta_sec % 60} сек"
             if eta_sec >= 60 else f"~{eta_sec} сек"
         ) if stage_id not in ("done", "failed") else ("✅ Готово!" if stage_id == "done" else "❌ Ошибка")
 
         # Большая прогресс-карточка сверху.
-        sim_badge = "<span class='pill'>симуляция (нет BACKEND_URL)</span>" if status.get("simulated") else "<span class='pill ok'>VPS backend</span>"
         st.markdown(
             f"""
             <div class='card' style='border:2px solid #7c3aed;background:linear-gradient(135deg,#1e1b4b,#0b1220)'>
                 <div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>
                     <div>
-                        <p style='margin:0;font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase'>Генерация туркменского видео</p>
+                        <p style='margin:0;font-size:11px;color:#a78bfa;font-weight:800;letter-spacing:.5px;text-transform:uppercase'>Генерация туркменского видео на VPS</p>
                         <p style='margin:4px 0 0;color:#fff;font-size:18px;font-weight:900'>{current_step}</p>
                     </div>
                     <div style='text-align:right'>
@@ -858,19 +817,22 @@ if _active_job or _active_sim:
                 <div style='width:100%;height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:14px'>
                     <div style='width:{progress}%;height:100%;background:linear-gradient(90deg,#7c3aed,#22d3ee);transition:width .5s'></div>
                 </div>
-                <div style='margin-top:10px'>{sim_badge}<span class='pill'>Этап: {stage_id}</span><span class='pill'>{progress}%</span></div>
+                <div style='margin-top:10px'><span class='pill ok'>Job: {st.session_state.job_id}</span><span class='pill'>Этап: {stage_id}</span><span class='pill'>{progress}%</span></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
         st.session_state.job_status = status
 
+        if status.get("error"):
+            st.error(f"Ошибка backend: {status['error']}")
+
         # Auto-rerun каждые 2 сек пока pipeline не done/failed.
         if stage_id not in ("done", "failed"):
             import time as _time
             _time.sleep(2)
             st.rerun()
-        elif stage_id == "done" and _active_job and _bk_ok and _bk_health.get("ok"):
+        elif stage_id == "done":
             try:
                 res = _job_result(st.session_state.job_id)
                 if res.get("ok"):
@@ -880,9 +842,6 @@ if _active_job or _active_sim:
                     st.session_state.final_zip_url = res.get("zip_url", "")
             except Exception:
                 pass
-        elif stage_id == "done" and status.get("simulated"):
-            # Симуляция закончилась — финального видео не будет, но сбросим sim.
-            st.session_state.sim_started_at = None
 
 
 # === Компактная панель настроек (НАВЕРХУ, не между видео) ===================
@@ -986,9 +945,12 @@ with left:
             mode="source_mp4", fmt=fmt, screen=screen,
             video_url=absolute_url(st.session_state.source_video_url),
         )
-        st.caption(
-            f"📥 Скачано на backend: {st.session_state.source_video_title} · "
-            f"{st.session_state.source_video_size_mb} МБ"
+        st.markdown(
+            f"<div style='background:#052e2b;border:1px solid #0f766e;border-radius:10px;"
+            f"padding:8px 12px;font-size:12px;color:#5eead4;font-weight:700;margin-bottom:8px'>"
+            f"✅ MP4 скачан на сервер · Готов к обработке"
+            f"</div>",
+            unsafe_allow_html=True,
         )
     elif st.session_state.video_bytes:
         # Локально загруженный файл (data URL).
@@ -997,14 +959,26 @@ with left:
         render_video_device(
             mode="source_mp4", fmt=fmt, screen=screen, video_url=data_url,
         )
-        st.caption(f"📥 Загружено: {st.session_state.video_name}")
+        st.markdown(
+            f"<div style='background:#1e293b;border:1px solid #475569;border-radius:10px;"
+            f"padding:8px 12px;font-size:12px;color:#cbd5e1;font-weight:700;margin-bottom:8px'>"
+            f"📎 Файл загружен локально (не на backend) · {st.session_state.video_name}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
     elif _yt_id:
         # YouTube preview — только до «Загрузить видео по ссылке».
         render_video_device(
             mode="youtube_preview", fmt=fmt, screen=screen,
             youtube_url=st.session_state.video_url,
         )
-        st.caption("📥 YouTube preview · нажми «⬇️ Загрузить видео по ссылке» чтобы скачать MP4 на backend")
+        st.markdown(
+            "<div style='background:#1e1b4b;border:1px solid #6366f1;border-radius:10px;"
+            "padding:8px 12px;font-size:12px;color:#c7d2fe;font-weight:700;margin-bottom:8px'>"
+            "👁 YouTube preview · нажми «⬇️ Загрузить видео по ссылке» чтобы скачать настоящий MP4 на backend"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     else:
         render_video_device(
             mode="empty", fmt=fmt, screen=screen,
@@ -1056,11 +1030,16 @@ with left:
                     st.success(res.get("message", "Видео скачано на backend."))
                     st.rerun()
                 else:
-                    st.warning(res.get("message", "Скачивание не удалось."))
+                    st.error(f"❌ Скачивание не удалось: {res.get('message', '')}")
+            elif not is_configured():
+                st.error(
+                    "🚫 **Backend не подключён.** Видео не может быть скачано.  \n"
+                    "Добавь `BACKEND_URL` в Streamlit Secrets (см. инструкцию ниже)."
+                )
             else:
-                st.info("Подключи BACKEND_URL для скачивания YouTube через VPS (yt-dlp).")
+                st.error("Сначала вставь YouTube/Shorts ссылку.")
         except Exception as exc:
-            st.warning(f"Backend недоступен: {exc}")
+            st.error(f"❌ Backend недоступен: {exc}")
 
     # Metadata из inspect.
     meta = st.session_state.get("url_preview") or {}
@@ -1148,19 +1127,52 @@ with right:
             mode="final_mp4", fmt=fmt, screen=screen,
             video_url=_abs_url(st.session_state.final_video_url),
         )
-        st.caption("📤 Готовое туркменское видео")
+        st.markdown(
+            "<div style='background:#052e2b;border:1px solid #0f766e;border-radius:10px;"
+            "padding:8px 12px;font-size:12px;color:#5eead4;font-weight:700;margin-bottom:8px'>"
+            "✅ Готовое видео создано · final_turkmen_video.mp4"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     elif st.session_state.get("job_status") and st.session_state["job_status"].get("stage") not in (None, "done", "failed"):
         s = st.session_state["job_status"]
         render_video_device(
             mode="processing", fmt=fmt, screen=screen,
             stage_label=s.get("current_step") or s.get("stage", ""),
             progress=int(s.get("progress", 0)),
-            eta_sec=int(s.get("eta_sec", 0)),
+            eta_sec=int(s.get("eta_seconds", s.get("eta_sec", 0))),
+        )
+        st.markdown(
+            f"<div style='background:#1e1b4b;border:1px solid #6366f1;border-radius:10px;"
+            f"padding:8px 12px;font-size:12px;color:#c7d2fe;font-weight:700;margin-bottom:8px'>"
+            f"⏳ Идёт обработка: {s.get('current_step', s.get('stage', ''))} · {int(s.get('progress', 0))}%"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    elif st.session_state.get("job_status") and st.session_state["job_status"].get("stage") == "failed":
+        s = st.session_state["job_status"]
+        render_video_device(
+            mode="empty", fmt=fmt, screen=screen,
+            placeholder_text=f"❌ Ошибка: {s.get('error', s.get('message', 'unknown'))}",
+        )
+        st.markdown(
+            f"<div style='background:#450a0a;border:1px solid #ef4444;border-radius:10px;"
+            f"padding:8px 12px;font-size:12px;color:#fca5a5;font-weight:700;margin-bottom:8px'>"
+            f"❌ Ошибка backend: {s.get('error', s.get('message', 'unknown'))}"
+            f"</div>",
+            unsafe_allow_html=True,
         )
     else:
         render_video_device(
             mode="empty", fmt=fmt, screen=screen,
             placeholder_text="Готовое видео появится здесь",
+        )
+        st.markdown(
+            "<div style='background:#1f2937;border:1px solid #374151;border-radius:10px;"
+            "padding:8px 12px;font-size:12px;color:#9ca3af;font-weight:700;margin-bottom:8px'>"
+            "⏸ Ожидает обработки — нажми «Создать готовое видео на туркменском»"
+            "</div>",
+            unsafe_allow_html=True,
         )
 
     # Главная кнопка — автоматический pipeline (download + process одним кликом).
@@ -1220,18 +1232,31 @@ with right:
                     style="cultural",
                 )
                 if res.get("ok"):
-                    st.session_state.sim_started_at = None  # реальный backend → симуляция выключена
                     st.success(f"🚀 Pipeline запущен на VPS. Job: {st.session_state.job_id}.")
                 else:
-                    st.warning(res.get("message", "Backend не запустил pipeline."))
+                    st.error(res.get("message", "Backend не запустил pipeline."))
         else:
-            # Preview: симулируем прогресс чтобы пользователь видел этапы и ETA.
-            import time as _time
-            st.session_state.sim_started_at = _time.time()
-            st.info("🎬 Запущена симуляция этапов (BACKEND_URL не настроен — реальный MP4 рендерится только на VPS).")
+            st.error(
+                "🚫 **Backend не подключён.** Готовое видео не может быть создано.  \n"
+                "Добавь `BACKEND_URL` в Streamlit Secrets (см. инструкцию ниже)."
+            )
         st.rerun()
 
     # 8 кнопок скачивания готового результата.
+    # Блок «Где файл» — пути на backend для прозрачности.
+    if st.session_state.job_id:
+        st.markdown(
+            f"<div style='background:#0f172a;border:1px solid #334155;border-radius:10px;"
+            f"padding:10px 12px;font-size:11px;color:#94a3b8;margin-bottom:10px;font-family:ui-monospace,monospace'>"
+            f"<div style='color:#cbd5e1;font-weight:800;margin-bottom:4px'>📂 Где файлы на VPS</div>"
+            f"Job ID: <span style='color:#7dd3fc'>{st.session_state.job_id}</span><br>"
+            f"Source: storage/jobs/{st.session_state.job_id}/source/source_video.mp4<br>"
+            + (f"Final: storage/jobs/{st.session_state.job_id}/output/final_turkmen_video.mp4<br>"
+               if st.session_state.final_video_url else "")
+            + f"</div>",
+            unsafe_allow_html=True,
+        )
+
     st.markdown("**📥 Скачать готовый результат на компьютер:**")
     d1, d2 = st.columns(2)
 
@@ -1493,9 +1518,9 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 
 # === Сброс job (компактный) — основной прогресс показан сверху страницы ======
-if st.session_state.get("job_id") or st.session_state.get("sim_started_at"):
+if st.session_state.get("job_id"):
     with st.expander("⚙️ Управление job"):
-        st.caption(f"Job ID: `{st.session_state.get('job_id') or '— симуляция —'}`")
+        st.caption(f"Job ID: `{st.session_state.get('job_id')}`")
         cA, cB = st.columns(2)
         if cA.button("🔄 Обновить статус", key="btn_refresh_job", use_container_width=True):
             st.rerun()
@@ -1507,7 +1532,6 @@ if st.session_state.get("job_id") or st.session_state.get("sim_started_at"):
                 "final_txt_url", "final_zip_url", "url_preview",
             ]:
                 st.session_state[k] = "" if isinstance(st.session_state.get(k), str) else None
-            st.session_state.sim_started_at = None
             st.rerun()
 
 
