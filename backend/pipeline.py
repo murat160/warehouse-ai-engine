@@ -215,22 +215,66 @@ def _stage_quality_check(job: Job) -> None:
 
 
 def _stage_tts(job: Job) -> None:
-    _set(job.id, "tts", 80, "Синтезирую туркменскую озвучку (MMS-TTS)…")
-    from src.cloud.tts_turkmen import (
-        TurkmenVoiceProfile,
-        get_emotion_preset,
-        synthesize_turkmen_tts,
-    )
+    """Туркменская озвучка с двумя путями: external provider → MMS-TTS fallback.
 
-    translated = STORE.get(job.id).result.get("translated", [])
-    emotion_dict = STORE.get(job.id).result.get("emotion_profile", {})
-    preset = get_emotion_preset(emotion_dict.get("emotion", "neutral"))
-    voice = TurkmenVoiceProfile(id=job.voice_mode, name=job.voice_mode)
+    Если TURKMEN_TTS_API_BASE_URL+API_KEY заданы в env → шлём текст в внешний
+    REST-сервис (генерик-адаптер src.cloud.tts_external_provider), затем
+    применяем post-processing эмоции.
+    Иначе → fallback на MMS-TTS (facebook/mms-tts-tuk-script_latin).
+    """
+
+    _set(job.id, "tts", 80, "Синтезирую туркменскую озвучку…")
+    res_data = STORE.get(job.id).result
+    translated = res_data.get("translated", [])
+    full_text = " ".join((seg.get("translation") or "") for seg in translated).strip()
+    if not full_text:
+        return
+    emotion_dict = res_data.get("emotion_profile", {}) or {}
     voiceover_path = job_output_dir(job.id) / FINAL_VOICEOVER
-    full_text = " ".join((seg.get("translation") or "") for seg in translated)
-    if full_text.strip():
-        synthesize_turkmen_tts(full_text, emotion_profile=preset, voice_profile=voice, output_path=str(voiceover_path))
-    STORE.update(job.id, result={**STORE.get(job.id).result, "voiceover_path": str(voiceover_path)})
+    provider_used = "none"
+
+    # Try external provider.
+    try:
+        from src.cloud.tts_external_provider import (
+            is_provider_configured, postprocess_audio_for_emotion,
+            synthesize_turkmen_via_provider, get_tts_provider_config,
+        )
+        if is_provider_configured():
+            _set(job.id, "tts", 80, "Внешний Turkmen TTS provider…")
+            cfg = get_tts_provider_config()
+            audio = synthesize_turkmen_via_provider(
+                text=full_text,
+                emotion_profile=emotion_dict,
+                voice_id=cfg["voice_id"] or None,
+                output_format=cfg["output_format"],
+            )
+            audio = postprocess_audio_for_emotion(
+                audio, emotion_dict, mime=f"audio/{cfg['output_format']}",
+            )
+            voiceover_path.write_bytes(audio)
+            provider_used = cfg["provider"] or "external"
+            logger.info("TTS via external provider OK → %s", voiceover_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("External TTS provider не сработал, фолбэк на MMS-TTS: %s", exc)
+
+    # Fallback: MMS-TTS (facebook/mms-tts-tuk-script_latin).
+    if provider_used == "none":
+        from src.cloud.tts_turkmen import (
+            TurkmenVoiceProfile, get_emotion_preset, synthesize_turkmen_tts,
+        )
+        preset = get_emotion_preset(emotion_dict.get("emotion", "neutral"))
+        voice = TurkmenVoiceProfile(id=job.voice_mode, name=job.voice_mode)
+        synthesize_turkmen_tts(
+            full_text, emotion_profile=preset, voice_profile=voice,
+            output_path=str(voiceover_path),
+        )
+        provider_used = "mms-tts"
+
+    STORE.update(job.id, result={
+        **STORE.get(job.id).result,
+        "voiceover_path": str(voiceover_path),
+        "tts_provider": provider_used,
+    })
 
 
 def _stage_sync(job: Job) -> None:

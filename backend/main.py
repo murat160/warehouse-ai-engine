@@ -465,6 +465,91 @@ async def speakers_detect(file: UploadFile = File(...)) -> Dict[str, Any]:
     return {"ok": True, "speakers": speakers}
 
 
+class TtsTurkmenIn(BaseModel):
+    text: str
+    voice_id: Optional[str] = None
+    emotion_profile: Optional[Dict[str, Any]] = None
+    output_format: str = "mp3"
+
+
+@app.post("/api/tts/turkmen")
+def tts_turkmen_endpoint(body: TtsTurkmenIn) -> Dict[str, Any]:
+    """Создаёт туркменскую озвучку через external provider или MMS-TTS fallback.
+
+    Сохраняет в storage/jobs/<job_id>/output/voiceover.<format> и возвращает
+    audio_url для st.audio / download.
+    """
+
+    from .storage import FINAL_VOICEOVER, FINAL_VOICEOVER_MP3, job_output_dir
+    from src.cloud.tts_external_provider import (
+        get_tts_provider_config, is_provider_configured,
+        postprocess_audio_for_emotion, synthesize_turkmen_via_provider,
+    )
+
+    if not body.text or not body.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+
+    # Создаём анонимный job для хранения результата.
+    job = STORE.create()
+    out_dir = job_output_dir(job.id)
+
+    provider_used = "none"
+    audio_bytes = b""
+    file_name = FINAL_VOICEOVER_MP3 if body.output_format == "mp3" else FINAL_VOICEOVER
+
+    # Try external provider.
+    if is_provider_configured():
+        try:
+            cfg = get_tts_provider_config()
+            audio_bytes = synthesize_turkmen_via_provider(
+                text=body.text,
+                emotion_profile=body.emotion_profile,
+                voice_id=body.voice_id or cfg["voice_id"] or None,
+                output_format=body.output_format,
+            )
+            audio_bytes = postprocess_audio_for_emotion(
+                audio_bytes, body.emotion_profile,
+                mime=f"audio/{body.output_format}",
+            )
+            provider_used = cfg["provider"] or "external"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("External TTS upstream error: %s", exc)
+
+    # Fallback: MMS-TTS.
+    if not audio_bytes:
+        try:
+            from src.cloud.tts_turkmen import (
+                TurkmenVoiceProfile, get_emotion_preset, synthesize_turkmen_tts,
+            )
+            ep_label = (body.emotion_profile or {}).get("emotion", "Нейтрально")
+            preset = get_emotion_preset(ep_label)
+            wav_path = out_dir / FINAL_VOICEOVER
+            synthesize_turkmen_tts(
+                body.text, emotion_profile=preset,
+                voice_profile=TurkmenVoiceProfile(id=body.voice_id or "tm_neutral",
+                                                  name=body.voice_id or "Туркменский"),
+                output_path=str(wav_path),
+            )
+            audio_bytes = wav_path.read_bytes()
+            file_name = FINAL_VOICEOVER
+            provider_used = "mms-tts"
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=503,
+                detail=f"Ни внешний provider, ни MMS-TTS недоступны: {exc}",
+            )
+
+    file_path = out_dir / file_name
+    file_path.write_bytes(audio_bytes)
+    return {
+        "ok": True,
+        "audio_url": f"/api/jobs/{job.id}/files/{file_name}",
+        "provider": provider_used,
+        "format": body.output_format,
+        "size_bytes": len(audio_bytes),
+    }
+
+
 @app.post("/api/translate/turkmen")
 def translate_turkmen(body: TranslateIn) -> Dict[str, Any]:
     from src.cloud.quality_gate import run_translation_quality_gate

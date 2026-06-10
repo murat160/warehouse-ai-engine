@@ -25,6 +25,43 @@ VPS — деплой полностью domain-agnostic. Примеры:
 `warehouse-ecosystem` и не содержит кода клиентского, курьерского, продавца
 или админ-панели.
 
+## Внешний Turkmen TTS provider (опционально)
+
+Pipeline сначала пытается через внешний REST-сервис (если задан в env),
+иначе falls back на MMS-TTS. Никакие ключи **никогда не вставляются в код**.
+
+**Streamlit Cloud Secrets** (`⋮` → Settings → Secrets):
+```toml
+TURKMEN_TTS_PROVIDER          = "elevenlabs"
+TURKMEN_TTS_API_BASE_URL      = "https://api.elevenlabs.io"
+TURKMEN_TTS_API_KEY           = "sk_***"
+TURKMEN_TTS_VOICE_ID          = "voice_id"
+TURKMEN_TTS_ENDPOINT_TEMPLATE = "/v1/text-to-speech/{voice_id}"
+TURKMEN_TTS_AUTH_HEADER       = "xi-api-key"
+TURKMEN_TTS_AUTH_FORMAT       = "{key}"
+TURKMEN_TTS_BODY_TEMPLATE     = '{"text":{text_json},"model_id":"eleven_multilingual_v2"}'
+TURKMEN_TTS_RESPONSE_FORMAT   = "audio"
+TURKMEN_TTS_OUTPUT_FORMAT     = "mp3"
+```
+
+**VPS environment** (`/etc/environment` или systemd EnvironmentFile):
+```bash
+export TURKMEN_TTS_PROVIDER=elevenlabs
+export TURKMEN_TTS_API_BASE_URL=https://api.elevenlabs.io
+export TURKMEN_TTS_API_KEY=sk_xxx
+export TURKMEN_TTS_VOICE_ID=...
+```
+
+Тест endpoint без полного pipeline:
+```bash
+curl -X POST https://ai.your-domain.com/api/tts/turkmen \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Salam dostum","output_format":"mp3"}'
+# → {"ok":true, "audio_url":"/api/jobs/job_xxx/files/voiceover.mp3", "provider":"elevenlabs"}
+```
+
+Полная справка по env-vars: `.env.production.example`.
+
 ## Два режима работы — что где включается
 
 | Что | Streamlit Cloud preview | VPS / GPU full stack |
