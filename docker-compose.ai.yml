@@ -1,0 +1,48 @@
+# Murat AI Studio — отдельный compose только для AI backend.
+#
+# НЕ смешивать с warehouse-ecosystem. Это самостоятельный сервис,
+# Streamlit UI обращается к нему через BACKEND_URL.
+#
+# Запуск на VPS:
+#   cp .env.production.example .env.production
+#   nano  .env.production              # заполнить TURKMEN_TTS_* и др.
+#   docker compose -f docker-compose.ai.yml up -d --build
+#
+# Проверка:
+#   curl http://localhost:8000/api/health
+#   docker compose -f docker-compose.ai.yml logs -f
+
+services:
+  murat-ai-backend:
+    container_name: murat-ai-backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Хранилище скачанных видео и готовых файлов на хосте.
+      - ./storage:/app/storage
+      # Кэш HuggingFace моделей — переживает rebuild контейнера.
+      - hf_cache:/home/murat/.cache/huggingface
+    env_file:
+      - .env.production
+    environment:
+      MURAT_AI_STORAGE: /app/storage
+      MURAT_AI_CORS_ORIGINS: "*"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  hf_cache:
+    driver: local

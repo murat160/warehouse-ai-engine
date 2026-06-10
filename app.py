@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # BUILD marker.
 # ---------------------------------------------------------------------------
-BUILD = "backend-connected-video-flow / 2026-06-07-v5"
+BUILD = "isolated-package-status / 2026-06-07-v6"
 TURKMEN_TTS_BACKEND = "facebook/mms-tts-tuk-script_latin"
 
 st.set_page_config(
@@ -731,31 +731,63 @@ st.markdown(
 )
 
 
-# === Backend status bar =====================================================
+# === System Status (BACKEND_URL + что доступно на backend) ==================
 def _backend_status():
     try:
-        from src.backend_client import backend_url, healthz, is_configured  # type: ignore
-        return is_configured(), backend_url(), healthz()
+        from src.backend_client import backend_url, health, is_configured  # type: ignore
+        return is_configured(), backend_url(), health()
     except Exception:  # noqa: BLE001
         return False, "", {"ok": False}
 
 
 _bk_ok, _bk_url, _bk_health = _backend_status()
+
+
+def _status_pill(label: str, ok: bool, tone_ok: str = "ok", tone_bad: str = "warn") -> str:
+    if ok:
+        return f"<span class='pill ok'>✅ {label}</span>"
+    return f"<span class='pill' style='background:#450a0a;border-color:#ef4444;color:#fca5a5'>❌ {label}</span>"
+
+
 if _bk_ok and _bk_health.get("ok"):
+    health_data = _bk_health
+    pills = (
+        _status_pill(f"BACKEND_URL подключён: {_bk_url}", True)
+        + _status_pill("Backend online", True)
+        + _status_pill("TTS provider", bool(health_data.get("tts_configured")))
+        + _status_pill("yt-dlp", bool(health_data.get("yt_dlp")))
+        + _status_pill("ffmpeg", bool(health_data.get("ffmpeg")))
+        + _status_pill("Storage ready", bool(health_data.get("storage_ready")))
+        + _status_pill("Real processing", bool(health_data.get("yt_dlp") and health_data.get("ffmpeg")))
+    )
     st.markdown(
-        f"<div class='pill ok'>VPS backend подключён: {_bk_url}</div>",
+        f"<div class='card' style='padding:10px 14px;margin-bottom:8px'>"
+        f"<div style='font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px'>"
+        f"Статус системы</div>{pills}</div>",
         unsafe_allow_html=True,
     )
 elif _bk_ok:
-    st.warning(
-        f"BACKEND_URL задан ({_bk_url}), но backend не отвечает на /healthz. "
-        "Проверь что FastAPI поднят на VPS: `uvicorn backend.main:app --host 0.0.0.0 --port 8000`."
+    st.error(
+        f"❌ BACKEND_URL задан ({_bk_url}), но Murat AI backend НЕ отвечает на /api/health.  \n"
+        "Проверь: `docker compose -f docker-compose.ai.yml logs -f murat-ai-backend`"
     )
 else:
-    st.info(
-        "Preview-режим: VPS backend не подключён. UI работает, но реальная обработка "
-        "(скачивание YouTube, ASR, MMS-TTS, рендер MP4) делается на VPS. "
-        "Добавь `BACKEND_URL=https://your-vps-domain.com` в Streamlit Secrets, чтобы включить обработку."
+    pills = (
+        _status_pill("BACKEND_URL подключён", False)
+        + _status_pill("Backend online", False)
+        + _status_pill("Real processing", False)
+        + "<span class='pill'>📦 Preview mode (UI only)</span>"
+    )
+    st.markdown(
+        f"<div class='card' style='padding:10px 14px;margin-bottom:8px;border:1px solid #ef4444'>"
+        f"<div style='font-size:10px;color:#fca5a5;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px'>"
+        f"Preview mode — Murat AI backend не подключён</div>{pills}"
+        f"<div style='font-size:11px;color:#94a3b8;margin-top:8px'>"
+        f"Чтобы включить настоящую обработку — подними отдельный backend на VPS "
+        f"(<code>docker compose -f docker-compose.ai.yml up -d</code>) и добавь "
+        f"<code>BACKEND_URL=https://ai-api.your-domain.com</code> в Streamlit Secrets."
+        f"</div></div>",
+        unsafe_allow_html=True,
     )
 
 

@@ -61,6 +61,12 @@ def healthz() -> Dict[str, Any]:
     return _get("/healthz")
 
 
+def health() -> Dict[str, Any]:
+    """Расширенный health: yt-dlp, ffmpeg, torch, TTS provider, storage."""
+
+    return _get("/api/health")
+
+
 def preview_url(url: str) -> Dict[str, Any]:
     return _post("/api/preview/url", json={"url": url})
 

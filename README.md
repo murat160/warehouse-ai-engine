@@ -25,6 +25,116 @@ VPS — деплой полностью domain-agnostic. Примеры:
 `warehouse-ecosystem` и не содержит кода клиентского, курьерского, продавца
 или админ-панели.
 
+## Архитектура — два независимых сервиса
+
+```
+┌──────────────────────┐         ┌──────────────────────────┐
+│  Streamlit Cloud     │ ──HTTP→ │  Murat AI Backend (VPS)   │
+│  app.py (UI only)    │         │  backend/main.py + GPU/CPU │
+│  light deps:         │         │  FastAPI + yt-dlp + Whisper│
+│   streamlit          │         │  + MMS-TTS + ffmpeg        │
+│   requests           │         │  + external TTS provider   │
+│   python-dotenv      │         │  storage/jobs/<id>/...      │
+└──────────────────────┘         └──────────────────────────┘
+         │                                  ▲
+         └──── BACKEND_URL=https://ai-api.your-domain.com ────┘
+```
+
+**Murat AI Studio** работает как ОДИН ЗАКОНЧЕННЫЙ ПАКЕТ, но физически
+разделён на две независимые части:
+
+| Часть | Где крутится | Что делает |
+|---|---|---|
+| **Streamlit UI** | Streamlit Cloud (бесплатно) | Показывает интерфейс, общается с backend через HTTP API |
+| **Murat AI Backend** | твой VPS (4 vCPU+, GPU желательно) | yt-dlp, Whisper ASR, MMS-TTS, ffmpeg рендер, all heavy AI |
+
+⚠️ **Murat AI ИЗОЛИРОВАН от `warehouse-ecosystem`** (admin/customer/seller/
+courier/staff/pickup/supervisor apps). Никаких прямых импортов или общей
+БД. Если warehouse надо вызвать Murat AI — только через HTTP API endpoints
+ниже.
+
+## Как запустить
+
+### A) Streamlit UI preview (бесплатно, без обработки)
+
+```bash
+git clone https://github.com/murat160/warehouse-ai-engine.git
+cd warehouse-ai-engine
+pip install -r requirements.txt   # streamlit + requests + python-dotenv
+streamlit run app.py
+```
+
+Откроется на `http://localhost:8501`. Это preview UI — все кнопки видны,
+но реальная обработка не работает без `BACKEND_URL`. Сверху страницы будет
+красный баннер «Preview mode — Murat AI backend не подключён».
+
+### B) Murat AI Backend на VPS
+
+```bash
+ssh root@your-vps
+git clone https://github.com/murat160/warehouse-ai-engine.git
+cd warehouse-ai-engine
+cp .env.production.example .env.production
+nano  .env.production                 # заполнить TURKMEN_TTS_* и др.
+docker compose -f docker-compose.ai.yml up -d --build
+```
+
+Проверка:
+```bash
+curl http://localhost:8000/api/health
+# → {"ok": true, "yt_dlp": true, "ffmpeg": true, "torch": true, "tts_configured": true, ...}
+docker compose -f docker-compose.ai.yml logs -f murat-ai-backend
+```
+
+### C) Подключение Streamlit UI → Backend
+
+Открой публичный backend через nginx + Certbot (см. `docs/vps-backend-setup.md`),
+получи URL вида `https://ai-api.your-domain.com`. Затем в Streamlit Cloud:
+
+`Manage app` → `⋮` → **Settings** → **Secrets**:
+```toml
+BACKEND_URL = "https://ai-api.your-domain.com"
+```
+
+**Reboot app** в Streamlit Cloud. Сверху появится **Статус системы** с
+зелёными пилюлями: BACKEND_URL подключён ✅ · yt-dlp ✅ · ffmpeg ✅ ·
+TTS provider ✅ · Real processing ✅.
+
+### D) End-to-end test
+
+1. Открой Streamlit UI → проверь что сверху **зелёный** статус.
+2. Вставь YouTube Shorts URL → нажми **🔍 Проверить ссылку**.
+3. Нажми **⬇️ Загрузить видео по ссылке** → слева в рамке появится
+   скачанный MP4 (не YouTube embed).
+4. Нажми **✨ Создать готовое видео на туркменском** → прогресс-карточка
+   сверху + анимация в правой рамке.
+5. Через ~3 минуты → справа **`final_turkmen_video.mp4`** с туркменской
+   озвучкой.
+6. Нажми **⬇ MP4** под правой рамкой → файл скачается в Downloads.
+
+## HTTP API endpoints (Murat AI Backend)
+
+```
+GET  /api/health                              ← статус + что доступно
+POST /api/video/inspect-url                   ← metadata по ссылке (без скачивания)
+POST /api/video/download-url                  ← yt-dlp → source_video.mp4
+POST /api/jobs/upload-and-create              ← локальный файл → source_video.mp4
+POST /api/jobs/{job_id}/process-turkmen       ← запуск pipeline
+GET  /api/jobs/{job_id}/status                ← progress + ETA
+GET  /api/jobs/{job_id}/result                ← URLs готовых файлов
+GET  /api/jobs/{job_id}/files/{filename}      ← отдача файла
+POST /api/tts/turkmen                         ← один-шаг: текст → озвучка
+POST /api/translate/turkmen                   ← один-шаг: текст → tk + quality
+POST /api/voice/create-profile                ← voice cloning из 30-40 сек MP3
+POST /api/speakers/detect                     ← speaker diarization
+```
+
+Если у тебя есть другой сервис (например `warehouse-ecosystem`), он может
+использовать Murat AI **только через эти endpoints** — никаких прямых
+импортов Python-кода или общей БД.
+
+
+
 ## Внешний Turkmen TTS provider (опционально)
 
 Pipeline сначала пытается через внешний REST-сервис (если задан в env),

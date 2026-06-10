@@ -4,7 +4,7 @@
 # проходил за 30 секунд. Все heavy ML deps (torch, transformers, scipy,
 # whisper, sentencepiece) → requirements-full.txt (для VPS/GPU).
 #
-# rebuild-marker: 2026-06-07-v5 (backend-connected-video-flow)
+# rebuild-marker: 2026-06-07-v6 (isolated-package-status)
 # Force Streamlit Cloud container rebuild.
 
 streamlit==1.45.1

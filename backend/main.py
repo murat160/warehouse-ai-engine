@@ -155,7 +155,20 @@ def _yt_dlp_format(quality: str) -> str:
 # ---------------------------------------------------------------------------
 @app.get("/healthz")
 def healthz() -> Dict[str, Any]:
-    return {"ok": True, "service": "murat-ai-studio-backend", "version": "2.0.0"}
+    """Базовый health — back-compat."""
+
+    return {"ok": True, "service": "murat-ai-studio-backend", "version": "2.1.0"}
+
+
+@app.get("/api/health")
+def api_health() -> Dict[str, Any]:
+    """Расширенный health — что реально доступно на этом backend.
+
+    Используется Streamlit UI для system status panel.
+    """
+
+    from .config import healthcheck_payload
+    return healthcheck_payload()
 
 
 # ---------------------------------------------------------------------------

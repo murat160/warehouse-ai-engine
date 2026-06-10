@@ -1,0 +1,53 @@
+# Murat AI Studio backend — production image для VPS.
+#
+# Запуск:
+#   docker compose -f docker-compose.ai.yml up -d --build
+#
+# Этот образ содержит ТОЛЬКО backend (FastAPI + AI pipeline).
+# Streamlit UI крутится отдельно (Streamlit Cloud) и обращается через
+# BACKEND_URL.
+
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# --- ffmpeg + git + curl (нужны для yt-dlp и видео-рендера) ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        git \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Кэшируем зависимости отдельным слоем — пересборка идёт быстрее.
+COPY requirements.txt requirements-full.txt ./
+RUN pip install --upgrade pip wheel setuptools \
+    && pip install -r requirements-full.txt
+
+# Код приложения.
+COPY backend ./backend
+COPY src ./src
+
+# Storage для скачанных видео + готовых файлов.
+RUN mkdir -p /app/storage/jobs
+
+# Опционально: пользователь без рутовых прав (production-safe).
+RUN useradd --create-home --shell /bin/bash murat \
+    && chown -R murat:murat /app
+USER murat
+
+EXPOSE 8000
+
+# Healthcheck — backend живой?
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/health || exit 1
+
+# Production-команда: uvicorn workers=2 (CPU 2+ vCPU).
+# Override через docker-compose.ai.yml если надо.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
